@@ -1,0 +1,101 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# CRITICAL SECURITY - Android Signing
+android/key.properties
+android/app/upload-keystore.jks
+android/app/*.jks
+android/app/*.keystore
+android/*.jks
+android/*.keystore
+
+# CRITICAL SECURITY - iOS Certificates
+ios/Runner/GoogleService-Info.plist
+**/*.mobileprovision
+**/*.p12
+**/*.cer
+
+# CRITICAL SECURITY - Environment & Secrets
+.env
+.env.*
+*.env
+.secret
+secrets.json
+credentials.json
+
+# CRITICAL SECURITY - API Keys & Config
+**/key.properties
+**/*secret*
+**/*credential*
+**/*private*
+
+# MCP Configuration (contains sensitive credentials)
+.claude/mcp.json
+.mcp.json
+
+# Web
+/web/flutter_bootstrap.js.map
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# Flutter plugins
+.flutter-plugins
+
+# CRITICAL SECURITY - Source Maps (MUST NOT deploy)
+/build/web/**/*.map
+/build/web/**/*.map.json
+*.dart.js.map
+flutter_bootstrap.js.map
+
+# Build artifacts that may contain secrets
+/build/web/.last_build_id
+
+# Local Netlify folder
+.netlify
+supabase/.env.local

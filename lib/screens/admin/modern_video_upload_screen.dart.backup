@@ -1,0 +1,610 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:provider/provider.dart';
+import '../../services/bunnycdn_service.dart';
+import '../../utils/admin_theme.dart';
+
+/// Modern Video Upload Screen
+/// Professional UI with grade/subject/topic selection
+
+class ModernVideoUploadScreen extends StatefulWidget {
+  final bool isEmbedded; // If true, don't show AppBar (will be in AdminLayout)
+
+  const ModernVideoUploadScreen({super.key, this.isEmbedded = false});
+
+  @override
+  State<ModernVideoUploadScreen> createState() => _ModernVideoUploadScreenState();
+}
+
+class _ModernVideoUploadScreenState extends State<ModernVideoUploadScreen> {
+  final _supabase = Supabase.instance.client;
+  final _formKey = GlobalKey<FormState>();
+
+  String? _selectedGradeId;
+  String? _selectedSubjectId;
+  String? _selectedTopicId;
+  String? _selectedLessonId;
+
+  List<Map<String, dynamic>> _grades = [];
+  List<Map<String, dynamic>> _subjects = [];
+  List<Map<String, dynamic>> _topics = [];
+  List<Map<String, dynamic>> _lessons = [];
+
+  File? _videoFile;
+  bool _isUploading = false;
+  double _uploadProgress = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGrades();
+  }
+
+  Future<void> _loadGrades() async {
+    final response = await _supabase
+        .from('grades')
+        .select()
+        .eq('is_active', true)
+        .order('display_order');
+    setState(() => _grades = List<Map<String, dynamic>>.from(response));
+  }
+
+  Future<void> _loadSubjects(String gradeId) async {
+    final response = await _supabase
+        .from('subjects')
+        .select()
+        .eq('grade_id', gradeId)
+        .eq('is_active', true)
+        .order('display_order');
+    setState(() {
+      _subjects = List<Map<String, dynamic>>.from(response);
+      _selectedSubjectId = null;
+      _topics = [];
+      _selectedTopicId = null;
+      _lessons = [];
+      _selectedLessonId = null;
+    });
+  }
+
+  Future<void> _loadTopics(String subjectId) async {
+    final response = await _supabase
+        .from('topics')
+        .select()
+        .eq('subject_id', subjectId)
+        .eq('is_active', true)
+        .order('display_order');
+    setState(() {
+      _topics = List<Map<String, dynamic>>.from(response);
+      _selectedTopicId = null;
+      _lessons = [];
+      _selectedLessonId = null;
+    });
+  }
+
+  Future<void> _loadLessons(String topicId) async {
+    final response = await _supabase
+        .from('lessons')
+        .select()
+        .eq('topic_id', topicId)
+        .eq('is_active', true)
+        .order('display_order');
+    setState(() {
+      _lessons = List<Map<String, dynamic>>.from(response);
+      _selectedLessonId = null;
+    });
+  }
+
+  Future<void> _pickVideo() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.video,
+      allowMultiple: false,
+    );
+
+    if (result != null && result.files.isNotEmpty) {
+      setState(() => _videoFile = File(result.files.first.path!));
+    }
+  }
+
+  Future<void> _uploadVideo() async {
+    if (!_formKey.currentState!.validate() || _videoFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الرجاء اختيار ملف فيديو')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isUploading = true;
+      _uploadProgress = 0.0;
+    });
+
+    try {
+      final bunnyCDN = context.read<BunnyCDNService>();
+
+      // Get selected data with names
+      final grade = _grades.firstWhere((g) => g['id'] == _selectedGradeId);
+      final subject = _subjects.firstWhere((s) => s['id'] == _selectedSubjectId);
+      final topic = _topics.firstWhere((t) => t['id'] == _selectedTopicId);
+      final lesson = _lessons.firstWhere((l) => l['id'] == _selectedLessonId);
+
+      // Upload to BunnyCDN with organized folder structure
+      final videoId = await bunnyCDN.uploadVideo(
+        videoFile: _videoFile!,
+        title: lesson['title'] ?? 'Untitled',
+        gradeName: grade['name_ar'] ?? grade['name'],
+        subjectName: subject['name_ar'] ?? subject['name'],
+        topicName: topic['name_ar'] ?? topic['name'],
+        onProgress: (progress) {
+          setState(() => _uploadProgress = progress);
+        },
+      );
+
+      if (videoId == null) {
+        throw Exception('Failed to upload video');
+      }
+
+      // Save to database
+      await _supabase.from('videos').insert({
+        'lesson_id': _selectedLessonId,
+        'bunny_video_id': videoId,
+        'duration_seconds': 0,
+        'thumbnail_url': bunnyCDN.getVideoThumbnailUrl(videoId),
+        'url_360p': bunnyCDN.getVideoStreamUrl(videoId, '360p'),
+        'url_480p': bunnyCDN.getVideoStreamUrl(videoId, '480p'),
+        'url_720p': bunnyCDN.getVideoStreamUrl(videoId, '720p'),
+        'url_1080p': bunnyCDN.getVideoStreamUrl(videoId, '1080p'),
+        'encryption_key_id': 'default_key',
+        'is_downloadable': true,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم رفع الفيديو بنجاح! ✓')),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final content = SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Header Card
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: AdminTheme.elevatedCard(
+                    gradient: AdminTheme.gradientBlue,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.video_library_rounded,
+                          size: 32,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'رفع درس مرئي جديد',
+                              style: AdminTheme.titleMedium,
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'اختر الفصل والمادة والموضوع ثم ارفع الفيديو',
+                              style: AdminTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 32),
+
+                // Selection Cards
+                Row(
+                  children: [
+                    Expanded(child: _buildGradeSelector()),
+                    const SizedBox(width: 16),
+                    Expanded(child: _buildSubjectSelector()),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                Row(
+                  children: [
+                    Expanded(child: _buildTopicSelector()),
+                    const SizedBox(width: 16),
+                    Expanded(child: _buildLessonSelector()),
+                  ],
+                ),
+
+                const SizedBox(height: 32),
+
+                // Video Picker
+                _buildVideoPicker(),
+
+                const SizedBox(height: 32),
+
+                // Upload Progress
+                if (_isUploading) ...[
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: AdminTheme.glassCard(),
+                    child: Column(
+                      children: [
+                        LinearProgressIndicator(
+                          value: _uploadProgress,
+                          backgroundColor: Colors.white.withOpacity(0.1),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AdminTheme.accentCyan,
+                          ),
+                          minHeight: 8,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '${(_uploadProgress * 100).toStringAsFixed(0)}% - جاري الرفع...',
+                          style: AdminTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                ],
+
+                // Upload Button
+                Container(
+                  height: 60,
+                  decoration: AdminTheme.elevatedCard(
+                    gradient: AdminTheme.gradientCyan,
+                  ),
+                  child: ElevatedButton(
+                    onPressed: _isUploading ? null : _uploadVideo,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.cloud_upload_rounded, size: 24),
+                        const SizedBox(width: 12),
+                        Text(
+                          _isUploading ? 'جاري الرفع...' : 'رفع الفيديو',
+                          style: AdminTheme.titleSmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // If embedded, just return content without Theme/Scaffold
+    if (widget.isEmbedded) {
+      return content;
+    }
+
+    // Standalone mode: wrap in Theme and Scaffold with AppBar
+    return Theme(
+      data: AdminTheme.darkTheme,
+      child: Scaffold(
+        backgroundColor: AdminTheme.primaryDark,
+        appBar: AppBar(
+          title: const Text('رفع درس مرئي'),
+          backgroundColor: AdminTheme.secondaryDark,
+        ),
+        body: content,
+      ),
+    );
+  }
+
+  Widget _buildGradeSelector() {
+    return Container(
+      decoration: AdminTheme.glassCard(),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: AdminTheme.gradientPurple,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.school_rounded, size: 20, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              const Text('الفصل', style: AdminTheme.titleSmall),
+            ],
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _selectedGradeId,
+            decoration: const InputDecoration(
+              hintText: 'اختر الفصل',
+              filled: true,
+              fillColor: Color(0xFF1A1F25),
+            ),
+            dropdownColor: AdminTheme.secondaryDark,
+            items: _grades.map((grade) {
+              return DropdownMenuItem<String>(
+                value: grade['id'] as String,
+                child: Text(
+                  grade['name_ar'] ?? grade['name'],
+                  style: AdminTheme.bodyMedium.copyWith(color: Colors.white),
+                ),
+              );
+            }).toList(),
+            onChanged: (value) {
+              setState(() => _selectedGradeId = value);
+              if (value != null) _loadSubjects(value);
+            },
+            validator: (value) => value == null ? 'اختر الفصل' : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubjectSelector() {
+    return Container(
+      decoration: AdminTheme.glassCard(),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: AdminTheme.gradientBlue,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.book_rounded, size: 20, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              const Text('المادة', style: AdminTheme.titleSmall),
+            ],
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _selectedSubjectId,
+            decoration: const InputDecoration(
+              hintText: 'اختر المادة',
+              filled: true,
+              fillColor: Color(0xFF1A1F25),
+            ),
+            dropdownColor: AdminTheme.secondaryDark,
+            items: _subjects.map((subject) {
+              return DropdownMenuItem<String>(
+                value: subject['id'] as String,
+                child: Text(
+                  subject['name_ar'] ?? subject['name'],
+                  style: AdminTheme.bodyMedium.copyWith(color: Colors.white),
+                ),
+              );
+            }).toList(),
+            onChanged: (value) {
+              setState(() => _selectedSubjectId = value);
+              if (value != null) _loadTopics(value);
+            },
+            validator: (value) => value == null ? 'اختر المادة' : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopicSelector() {
+    return Container(
+      decoration: AdminTheme.glassCard(),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: AdminTheme.gradientCyan,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.topic_rounded, size: 20, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              const Text('الموضوع', style: AdminTheme.titleSmall),
+            ],
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _selectedTopicId,
+            decoration: const InputDecoration(
+              hintText: 'اختر الموضوع',
+              filled: true,
+              fillColor: Color(0xFF1A1F25),
+            ),
+            dropdownColor: AdminTheme.secondaryDark,
+            items: _topics.map((topic) {
+              return DropdownMenuItem<String>(
+                value: topic['id'] as String,
+                child: Text(
+                  topic['name_ar'] ?? topic['name'],
+                  style: AdminTheme.bodyMedium.copyWith(color: Colors.white),
+                ),
+              );
+            }).toList(),
+            onChanged: (value) {
+              setState(() => _selectedTopicId = value);
+              if (value != null) _loadLessons(value);
+            },
+            validator: (value) => value == null ? 'اختر الموضوع' : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLessonSelector() {
+    return Container(
+      decoration: AdminTheme.glassCard(),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: AdminTheme.gradientPink,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.video_library_rounded, size: 20, color: Colors.white),
+              ),
+              const SizedBox(width: 12),
+              const Text('الدرس', style: AdminTheme.titleSmall),
+            ],
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _selectedLessonId,
+            decoration: const InputDecoration(
+              hintText: 'اختر الدرس',
+              filled: true,
+              fillColor: Color(0xFF1A1F25),
+            ),
+            dropdownColor: AdminTheme.secondaryDark,
+            items: _lessons.map((lesson) {
+              return DropdownMenuItem<String>(
+                value: lesson['id'] as String,
+                child: Text(
+                  lesson['title_ar'] ?? lesson['title'],
+                  style: AdminTheme.bodyMedium.copyWith(color: Colors.white),
+                ),
+              );
+            }).toList(),
+            onChanged: (value) => setState(() => _selectedLessonId = value),
+            validator: (value) => value == null ? 'اختر الدرس' : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoPicker() {
+    return Container(
+      decoration: AdminTheme.glassCard(),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          if (_videoFile == null) ...[
+            Icon(
+              Icons.video_file_rounded,
+              size: 80,
+              color: Colors.white.withOpacity(0.3),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'لم يتم اختيار ملف',
+              style: AdminTheme.bodyMedium,
+            ),
+            const SizedBox(height: 24),
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: AdminTheme.gradientGreen,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _videoFile!.path.split('/').last,
+                      style: AdminTheme.bodyMedium.copyWith(color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+          ],
+          Container(
+            height: 60,
+            decoration: AdminTheme.elevatedCard(
+              gradient: AdminTheme.gradientPurple,
+            ),
+            child: ElevatedButton(
+              onPressed: _pickVideo,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.video_file_rounded),
+                  const SizedBox(width: 12),
+                  Text(
+                    _videoFile == null ? 'اختر ملف فيديو' : 'اختر ملف آخر',
+                    style: AdminTheme.titleSmall,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

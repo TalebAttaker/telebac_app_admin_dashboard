@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="منصة المعين التعليمية الشاملة لطلاب موريتانيا - دروس، فيديوهات، بث مباشر، وامتحانات البكالوريا">
+
+  <!-- PWA Meta Tags -->
+  <meta name="theme-color" content="#2196F3">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="المعين">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="المعين">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Microsoft Tiles -->
+  <meta name="msapplication-TileColor" content="#2196F3">
+  <meta name="msapplication-TileImage" content="icons/Icon-512.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>El-Mouein</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    .loading {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #2196F3;
+      color: white;
+      font-family: Arial, sans-serif;
+      z-index: 9999;
+    }
+    .loading-spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .error-container {
+      background: #f44336;
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      max-width: 90%;
+      text-align: center;
+      display: none;
+    }
+    .error-container.show {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="loading" id="loading">
+    <div class="loading-spinner"></div>
+    <div>جاري التحميل...</div>
+    <div style="font-size: 12px; margin-top: 10px;">Loading...</div>
+  </div>
+
+  <div class="error-container" id="error">
+    <h3>خطأ في التحميل / Loading Error</h3>
+    <p id="error-message"></p>
+    <button onclick="location.reload()" style="margin-top: 10px; padding: 10px 20px; background: white; color: #f44336; border: none; border-radius: 4px; cursor: pointer;">
+      إعادة المحاولة / Retry
+    </button>
+  </div>
+
+  <script>
+    // Hide loading screen when Flutter is ready
+    window.addEventListener('flutter-first-frame', function() {
+      var loadingEl = document.getElementById('loading');
+      if (loadingEl) {
+        loadingEl.style.display = 'none';
+      }
+    });
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
