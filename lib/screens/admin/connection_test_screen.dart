@@ -33,8 +33,9 @@ class _ConnectionTestScreenState extends State<ConnectionTestScreen> {
 
     try {
       // Test 1: Check Supabase URL
-      results['Supabase URL'] = _supabase.supabaseUrl;
-      results['URL Valid'] = _supabase.supabaseUrl.isNotEmpty;
+      final supabaseUrl = Supabase.instance.client.supabaseUrl;
+      results['Supabase URL'] = supabaseUrl;
+      results['URL Valid'] = supabaseUrl.isNotEmpty;
 
       // Test 2: Fetch grades (public data)
       try {
