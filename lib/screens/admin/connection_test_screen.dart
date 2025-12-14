@@ -33,7 +33,7 @@ class _ConnectionTestScreenState extends State<ConnectionTestScreen> {
 
     try {
       // Test 1: Check Supabase URL
-      final supabaseUrl = Supabase.instance.client.supabaseUrl;
+      final supabaseUrl = SupabaseConfig.supabaseUrl;
       results['Supabase URL'] = supabaseUrl;
       results['URL Valid'] = supabaseUrl.isNotEmpty;
 

@@ -281,6 +281,108 @@ class SecureBunnyService extends ChangeNotifier {
     return '$_pullZoneUrl/$videoId/$quality.mp4';
   }
 
+  /// Upload video from web using HTML File object (Admin only - Web platform)
+  /// This method handles large files efficiently without loading into memory
+  /// 1. Creates video entry
+  /// 2. Gets upload credentials
+  /// 3. Uploads using HTML File API
+  Future<String?> uploadVideoFromWeb({
+    required dynamic htmlFile,
+    required String fileName,
+    required int fileSize,
+    required String title,
+    String? curriculumName,
+    String? gradeName,
+    String? subjectName,
+    String? topicName,
+    Function(double)? onProgress,
+  }) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      // Step 1: Get or create collection if hierarchy provided
+      String? collectionId;
+      if (curriculumName != null && gradeName != null && subjectName != null && topicName != null) {
+        collectionId = await getOrCreateCollection(
+          gradeName: gradeName,
+          subjectName: subjectName,
+          topicName: topicName,
+        );
+      }
+
+      // Step 2: Create video entry
+      debugPrint('[BUNNY] Creating video entry...');
+      final videoId = await createVideo(
+        title: title,
+        collectionId: collectionId,
+      );
+
+      if (videoId == null || videoId.isEmpty) {
+        final errorMsg = _error ?? 'Failed to create video entry - no ID returned';
+        debugPrint('[BUNNY] $errorMsg');
+        throw Exception(errorMsg);
+      }
+
+      debugPrint('[BUNNY] Video entry created with ID: $videoId');
+
+      // Step 3: Get upload credentials
+      debugPrint('[BUNNY] Getting upload credentials...');
+      final credentials = await getUploadCredentials(videoId);
+      if (credentials == null) {
+        final errorMsg = _error ?? 'Failed to get upload credentials';
+        debugPrint('[BUNNY] $errorMsg');
+        await deleteVideo(videoId); // Clean up
+        throw Exception(errorMsg);
+      }
+
+      // Step 4: Upload the file using HTML File API
+      final uploadUrl = credentials['uploadUrl'] as String;
+      final authKey = credentials['authKey'] as String;
+
+      debugPrint('[BUNNY] Uploading video to BunnyCDN...');
+      debugPrint('[BUNNY] Platform: WEB (HTML File API)');
+      debugPrint('[BUNNY] File size: ${(fileSize / 1024 / 1024).toStringAsFixed(2)} MB');
+
+      if (htmlFile == null) {
+        final errorMsg = 'HTML File object is null - cannot upload';
+        debugPrint('[BUNNY] $errorMsg');
+        await deleteVideo(videoId);
+        throw Exception(errorMsg);
+      }
+
+      try {
+        debugPrint('[BUNNY] Using WebUploadService for file upload');
+        await WebUploadService.uploadLargeFile(
+          file: htmlFile,
+          uploadUrl: uploadUrl,
+          headers: {
+            'AccessKey': authKey,
+            'Content-Type': 'application/octet-stream',
+          },
+          onProgress: onProgress,
+        );
+        debugPrint('[BUNNY] Web upload completed successfully');
+      } catch (e) {
+        debugPrint('[BUNNY] Web upload error: $e');
+        _error = e.toString();
+        await deleteVideo(videoId); // Clean up
+        throw Exception('Upload failed: $e');
+      }
+
+      debugPrint('[BUNNY] Video uploaded successfully: $videoId');
+      return videoId;
+    } catch (e) {
+      _error = e.toString();
+      debugPrint('Error uploading video from web: $e');
+      return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   /// Upload video from bytes (Admin only)
   /// This method handles the complete upload flow:
   /// 1. Creates video entry
@@ -344,57 +446,26 @@ class SecureBunnyService extends ChangeNotifier {
       debugPrint('[BUNNY] Platform: ${kIsWeb ? "WEB" : "MOBILE"}');
       debugPrint('[BUNNY] File size: ${(videoBytes.length / 1024 / 1024).toStringAsFixed(2)} MB');
 
-      if (kIsWeb && videoBytes.length > 10 * 1024 * 1024) {
-        // Web platform with large files (>10MB): Use WebUploadService with HTML File object
-        debugPrint('[BUNNY] Large file detected on web - attempting HTML File upload');
+      // NOTE: This method is for mobile/desktop or when bytes are already loaded
+      // For web large files, use uploadVideoFromWeb() instead
+      debugPrint('[BUNNY] Using standard http.put upload');
+      final response = await http.put(
+        Uri.parse(uploadUrl),
+        headers: {
+          'AccessKey': authKey,
+          'Content-Type': 'application/octet-stream',
+        },
+        body: videoBytes,
+      );
 
-        try {
-          // Try to get HTML File from file picker
-          final htmlFile = WebUploadService.getHtmlFileFromPicker();
+      debugPrint('[BUNNY] Upload response status: ${response.statusCode}');
 
-          if (htmlFile != null) {
-            debugPrint('[BUNNY] Using WebUploadService for large file upload');
-            await WebUploadService.uploadLargeFile(
-              file: htmlFile,
-              uploadUrl: uploadUrl,
-              headers: {
-                'AccessKey': authKey,
-                'Content-Type': 'application/octet-stream',
-              },
-              onProgress: onProgress,
-            );
-            debugPrint('[BUNNY] Web upload completed successfully');
-          } else {
-            debugPrint('[BUNNY] HTML File not found, falling back to standard upload');
-            throw Exception('Cannot upload large files without HTML File object');
-          }
-        } catch (e) {
-          debugPrint('[BUNNY] Web upload error: $e');
-          _error = e.toString();
-          await deleteVideo(videoId); // Clean up
-          throw Exception('Large file upload failed: $e');
-        }
-      } else {
-        // Standard upload for mobile or small web files
-        debugPrint('[BUNNY] Using standard http.put upload');
-        final response = await http.put(
-          Uri.parse(uploadUrl),
-          headers: {
-            'AccessKey': authKey,
-            'Content-Type': 'application/octet-stream',
-          },
-          body: videoBytes,
-        );
-
-        debugPrint('[BUNNY] Upload response status: ${response.statusCode}');
-
-        if (response.statusCode != 200 && response.statusCode != 201) {
-          final errorMsg = 'Upload failed with status ${response.statusCode}: ${response.body}';
-          debugPrint('[BUNNY] $errorMsg');
-          _error = errorMsg;
-          await deleteVideo(videoId); // Clean up
-          throw Exception(errorMsg);
-        }
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        final errorMsg = 'Upload failed with status ${response.statusCode}: ${response.body}';
+        debugPrint('[BUNNY] $errorMsg');
+        _error = errorMsg;
+        await deleteVideo(videoId); // Clean up
+        throw Exception(errorMsg);
       }
 
       debugPrint('[BUNNY] Video uploaded successfully: $videoId');

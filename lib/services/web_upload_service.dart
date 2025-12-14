@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'dart:html' as html;
 
@@ -66,18 +65,7 @@ class WebUploadService {
     }
   }
 
-  /// Get HTML File object from FilePicker result
-  /// This is a workaround to access the underlying HTML File without loading bytes
-  static html.File? getHtmlFileFromPicker() {
-    try {
-      // Access the hidden file input element created by FilePicker
-      final fileInput = html.document.querySelector('input[type="file"]') as html.FileUploadInputElement?;
-      if (fileInput != null && fileInput.files != null && fileInput.files!.isNotEmpty) {
-        return fileInput.files!.first;
-      }
-    } catch (e) {
-      debugPrint('Error getting HTML file: $e');
-    }
-    return null;
-  }
+  /// DEPRECATED: getHtmlFileFromPicker() has been removed
+  /// Use WebFilePicker.pickVideoFile() instead which directly returns HTML File object
+  /// This method was insecure as it searched the DOM for file inputs
 }

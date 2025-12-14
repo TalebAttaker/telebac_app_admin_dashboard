@@ -9,9 +9,9 @@ import 'dart:convert';
 import '../../services/secure_bunny_service.dart';
 import '../../utils/admin_theme.dart';
 
-// Conditional import for web HTML File API
-import '../../services/web_upload_helper_stub.dart'
-  if (dart.library.html) '../../services/web_upload_helper_web.dart';
+// Conditional import for web file picker
+import '../../services/web_file_picker_stub.dart'
+  if (dart.library.html) '../../services/web_file_picker_web.dart';
 
 /// Modern Video Upload Screen
 /// Professional UI with grade/subject/topic selection
@@ -182,45 +182,111 @@ class _ModernVideoUploadScreenState extends State<ModernVideoUploadScreen> {
 
   Future<void> _pickVideo() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        allowMultiple: false,
-        withData: kIsWeb, // Load bytes on web platform
-        withReadStream: false,
-      );
+      if (kIsWeb) {
+        // Web platform: Use custom web file picker to capture HTML File object
+        final webResult = await WebFilePicker.pickVideoFile();
 
-      if (result != null && result.files.isNotEmpty) {
-        final file = result.files.first;
+        if (webResult != null) {
+          // Validate file size (max 500MB)
+          if (!WebFilePicker.validateFileSize(webResult.size)) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('❌ الملف كبير جداً! الحد الأقصى: 500 ميجابايت'),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 5),
+                ),
+              );
+            }
+            return;
+          }
 
-        setState(() {
-          _platformFile = file;
+          // Validate file type
+          if (!WebFilePicker.validateVideoFile(webResult.name, webResult.type)) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('❌ نوع الملف غير صحيح! الرجاء اختيار ملف فيديو'),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 5),
+                ),
+              );
+            }
+            return;
+          }
 
-          if (kIsWeb) {
-            // On web, we use file.bytes directly (no need for HTML File object)
-          } else {
-            // Only try to create File on non-web platforms
+          setState(() {
+            _htmlFile = webResult.htmlFile;
+            _platformFile = PlatformFile(
+              name: webResult.name,
+              size: webResult.size,
+              bytes: null, // Don't load bytes for large files
+            );
+          });
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✅ تم اختيار: ${webResult.name}\nالحجم: ${(webResult.size / 1024 / 1024).toStringAsFixed(2)} MB\nجاهز للرفع!'),
+                duration: const Duration(seconds: 5),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+      } else {
+        // Non-web platform: Use standard file picker
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.video,
+          allowMultiple: false,
+          withData: false,
+          withReadStream: false,
+        );
+
+        if (result != null && result.files.isNotEmpty) {
+          final file = result.files.first;
+
+          // Validate file size (max 500MB)
+          if (file.size > 500 * 1024 * 1024) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('❌ الملف كبير جداً! الحد الأقصى: 500 ميجابايت'),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 5),
+                ),
+              );
+            }
+            return;
+          }
+
+          setState(() {
+            _platformFile = file;
             if (file.path != null) {
               _videoFile = File(file.path!);
             }
-          }
-        });
+          });
 
-        if (mounted) {
-          final uploadReady = (kIsWeb && file.bytes != null) || (!kIsWeb && _videoFile != null);
-          final status = uploadReady ? '✅ جاهز للرفع' : '❌ خطأ في الملف';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('تم اختيار: ${file.name}\nالحجم: ${(file.size / 1024 / 1024).toStringAsFixed(2)} MB\nالحالة: $status'),
-              duration: const Duration(seconds: 5),
-              backgroundColor: uploadReady ? Colors.green : Colors.red,
-            ),
-          );
+          if (mounted) {
+            final uploadReady = _videoFile != null;
+            final status = uploadReady ? '✅ جاهز للرفع' : '❌ خطأ في الملف';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('تم اختيار: ${file.name}\nالحجم: ${(file.size / 1024 / 1024).toStringAsFixed(2)} MB\nالحالة: $status'),
+                duration: const Duration(seconds: 5),
+                backgroundColor: uploadReady ? Colors.green : Colors.red,
+              ),
+            );
+          }
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطأ في اختيار الملف: $e')),
+          SnackBar(
+            content: Text('خطأ في اختيار الملف: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -379,17 +445,18 @@ class _ModernVideoUploadScreenState extends State<ModernVideoUploadScreen> {
       // Upload to BunnyCDN with organized folder structure
       String? videoId;
 
-      if (kIsWeb && _platformFile != null && _platformFile!.bytes != null) {
-        // Web platform: Use file.bytes for upload
-        final platformFile = _platformFile!; // Store in local variable for null safety
-        debugPrint('Uploading video from web using file.bytes');
+      if (kIsWeb && _platformFile != null) {
+        // Web platform: Use HTML File object for upload
+        final platformFile = _platformFile!;
+        debugPrint('Uploading video from web');
         debugPrint('  - File: ${platformFile.name}');
         debugPrint('  - Size: ${(platformFile.size / 1024 / 1024).toStringAsFixed(2)} MB');
-        debugPrint('  - Bytes length: ${platformFile.bytes!.length}');
+        debugPrint('  - Has HTML File: ${_htmlFile != null}');
 
-        videoId = await secureBunny.uploadVideoFromBytes(
-          videoBytes: platformFile.bytes!,
+        videoId = await secureBunny.uploadVideoFromWeb(
+          htmlFile: _htmlFile,
           fileName: platformFile.name,
+          fileSize: platformFile.size,
           title: _titleArController.text.isNotEmpty ? _titleArController.text : 'Untitled',
           curriculumName: curriculum['name_ar'] ?? curriculum['name'],
           gradeName: grade['name_ar'] ?? grade['name'],
@@ -400,7 +467,11 @@ class _ModernVideoUploadScreenState extends State<ModernVideoUploadScreen> {
           },
         );
 
-        debugPrint('Video uploaded successfully! Video ID: $videoId');
+        if (videoId != null) {
+          debugPrint('✅ Video uploaded successfully! Video ID: $videoId');
+        } else {
+          debugPrint('❌ Video upload failed - videoId is null');
+        }
 
       } else if (_videoFile != null) {
         // Non-web platform: Use file upload
@@ -416,12 +487,18 @@ class _ModernVideoUploadScreenState extends State<ModernVideoUploadScreen> {
             setState(() => _uploadProgress = progress);
           },
         );
+
+        if (videoId != null) {
+          debugPrint('✅ Video uploaded successfully! Video ID: $videoId');
+        } else {
+          debugPrint('❌ Video upload failed - videoId is null');
+        }
       } else {
         throw Exception('No video file available for upload');
       }
 
       if (videoId == null) {
-        throw Exception('Failed to upload video');
+        throw Exception('فشل رفع الفيديو - لم يتم الحصول على معرف الفيديو');
       }
 
       // Upload PDF if selected (optional)
@@ -446,6 +523,10 @@ class _ModernVideoUploadScreenState extends State<ModernVideoUploadScreen> {
           'url_480p': secureBunny.getVideoStreamUrl(videoId, '480p'),
           'url_720p': secureBunny.getVideoStreamUrl(videoId, '720p'),
           'url_1080p': secureBunny.getVideoStreamUrl(videoId, '1080p'),
+          'encryption_key_id': 'default_key',
+          'duration_seconds': 1, // Placeholder - will be synced automatically in background
+          'is_downloadable': false,
+          'is_free': false,
         },
       );
 
@@ -515,38 +596,47 @@ class _ModernVideoUploadScreenState extends State<ModernVideoUploadScreen> {
                   decoration: AdminTheme.elevatedCard(
                     gradient: AdminTheme.gradientBlue,
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.video_library_rounded,
-                          size: 32,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'رفع درس مرئي جديد',
-                              style: AdminTheme.titleMedium,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Row(
+                        children: [
+                          if (constraints.maxWidth > 200) ...[
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.video_library_rounded,
+                                size: 32,
+                                color: Colors.white,
+                              ),
                             ),
-                            SizedBox(height: 4),
-                            Text(
-                              'اختر الفصل والمادة والموضوع ثم ارفع الفيديو',
-                              style: AdminTheme.bodySmall,
-                            ),
+                            const SizedBox(width: 16),
                           ],
-                        ),
-                      ),
-                    ],
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  'رفع درس مرئي جديد',
+                                  style: AdminTheme.titleMedium,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'اختر الفصل والمادة والموضوع ثم ارفع الفيديو',
+                                  style: AdminTheme.bodySmall,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 2,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
 

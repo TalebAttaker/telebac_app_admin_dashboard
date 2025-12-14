@@ -321,20 +321,22 @@ class PaymentProofCard extends StatelessWidget {
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
                               vertical: 14,
-                              horizontal: 8,
+                              horizontal: 4,
                             ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           icon: const Icon(Icons.cancel, size: 18),
-                          label: const Text(
-                            'رفض',
-                            overflow: TextOverflow.ellipsis,
+                          label: const Flexible(
+                            child: Text(
+                              'رفض',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: onApprove,
@@ -343,16 +345,18 @@ class PaymentProofCard extends StatelessWidget {
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
                               vertical: 14,
-                              horizontal: 8,
+                              horizontal: 4,
                             ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           icon: const Icon(Icons.check_circle, size: 18),
-                          label: const Text(
-                            'قبول',
-                            overflow: TextOverflow.ellipsis,
+                          label: const Flexible(
+                            child: Text(
+                              'قبول',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
                       ),
