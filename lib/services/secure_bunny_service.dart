@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
+import 'web_upload_service.dart' if (dart.library.io) 'web_upload_helper_stub.dart';
 
 /// Secure BunnyCDN Service
 /// Uses Edge Function to handle all BunnyCDN operations
@@ -340,23 +341,60 @@ class SecureBunnyService extends ChangeNotifier {
       final authKey = credentials['authKey'] as String;
 
       debugPrint('[BUNNY] Uploading video to BunnyCDN...');
-      final response = await http.put(
-        Uri.parse(uploadUrl),
-        headers: {
-          'AccessKey': authKey,
-          'Content-Type': 'application/octet-stream',
-        },
-        body: videoBytes,
-      );
+      debugPrint('[BUNNY] Platform: ${kIsWeb ? "WEB" : "MOBILE"}');
+      debugPrint('[BUNNY] File size: ${(videoBytes.length / 1024 / 1024).toStringAsFixed(2)} MB');
 
-      debugPrint('[BUNNY] Upload response status: ${response.statusCode}');
+      if (kIsWeb && videoBytes.length > 10 * 1024 * 1024) {
+        // Web platform with large files (>10MB): Use WebUploadService with HTML File object
+        debugPrint('[BUNNY] Large file detected on web - attempting HTML File upload');
 
-      if (response.statusCode != 200 && response.statusCode != 201) {
-        final errorMsg = 'Upload failed with status ${response.statusCode}: ${response.body}';
-        debugPrint('[BUNNY] $errorMsg');
-        _error = errorMsg;
-        await deleteVideo(videoId); // Clean up
-        throw Exception(errorMsg);
+        try {
+          // Try to get HTML File from file picker
+          final htmlFile = WebUploadService.getHtmlFileFromPicker();
+
+          if (htmlFile != null) {
+            debugPrint('[BUNNY] Using WebUploadService for large file upload');
+            await WebUploadService.uploadLargeFile(
+              file: htmlFile,
+              uploadUrl: uploadUrl,
+              headers: {
+                'AccessKey': authKey,
+                'Content-Type': 'application/octet-stream',
+              },
+              onProgress: onProgress,
+            );
+            debugPrint('[BUNNY] Web upload completed successfully');
+          } else {
+            debugPrint('[BUNNY] HTML File not found, falling back to standard upload');
+            throw Exception('Cannot upload large files without HTML File object');
+          }
+        } catch (e) {
+          debugPrint('[BUNNY] Web upload error: $e');
+          _error = e.toString();
+          await deleteVideo(videoId); // Clean up
+          throw Exception('Large file upload failed: $e');
+        }
+      } else {
+        // Standard upload for mobile or small web files
+        debugPrint('[BUNNY] Using standard http.put upload');
+        final response = await http.put(
+          Uri.parse(uploadUrl),
+          headers: {
+            'AccessKey': authKey,
+            'Content-Type': 'application/octet-stream',
+          },
+          body: videoBytes,
+        );
+
+        debugPrint('[BUNNY] Upload response status: ${response.statusCode}');
+
+        if (response.statusCode != 200 && response.statusCode != 201) {
+          final errorMsg = 'Upload failed with status ${response.statusCode}: ${response.body}';
+          debugPrint('[BUNNY] $errorMsg');
+          _error = errorMsg;
+          await deleteVideo(videoId); // Clean up
+          throw Exception(errorMsg);
+        }
       }
 
       debugPrint('[BUNNY] Video uploaded successfully: $videoId');
