@@ -30,7 +30,7 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
+# /build/ - commented to allow build/web for Vercel deployment
 /coverage/
 
 # Symbolication related
@@ -99,3 +99,4 @@ flutter_bootstrap.js.map
 # Local Netlify folder
 .netlify
 supabase/.env.local
+.vercel
