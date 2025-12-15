@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/payment_proof.dart';
 import '../../utils/admin_theme.dart';
+import './secure_payment_image.dart';
 
 /// Payment Proof Card Widget
 /// Displays payment proof with approve/reject actions for admin
@@ -249,13 +249,13 @@ class PaymentProofCard extends StatelessWidget {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          CachedNetworkImage(
-                            imageUrl: paymentProof.imageUrl,
+                          SecurePaymentImage(
+                            paymentProofId: paymentProof.id,
                             fit: BoxFit.cover,
-                            placeholder: (context, url) => const Center(
+                            placeholder: const Center(
                               child: CircularProgressIndicator(),
                             ),
-                            errorWidget: (context, url, error) => Container(
+                            errorWidget: Container(
                               color: AdminTheme.secondaryDark,
                               child: const Center(
                                 child: Column(
@@ -321,22 +321,20 @@ class PaymentProofCard extends StatelessWidget {
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
                               vertical: 14,
-                              horizontal: 4,
+                              horizontal: 8,
                             ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           icon: const Icon(Icons.cancel, size: 18),
-                          label: const Flexible(
-                            child: Text(
-                              'رفض',
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                          label: const Text(
+                            'رفض',
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: onApprove,
@@ -345,18 +343,16 @@ class PaymentProofCard extends StatelessWidget {
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
                               vertical: 14,
-                              horizontal: 4,
+                              horizontal: 8,
                             ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           icon: const Icon(Icons.check_circle, size: 18),
-                          label: const Flexible(
-                            child: Text(
-                              'قبول',
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                          label: const Text(
+                            'قبول',
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),

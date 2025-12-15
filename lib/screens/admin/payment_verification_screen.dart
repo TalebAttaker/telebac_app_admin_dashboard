@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/payment_proof.dart';
 import '../../utils/admin_theme.dart';
 import '../../widgets/admin/payment_proof_card.dart';
+import '../../widgets/admin/secure_payment_image.dart';
 
 /// Payment Verification Screen
 /// Allows admin to review and approve/reject payment proofs
@@ -178,26 +178,41 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen>
       final adminId = _supabase.auth.currentUser?.id;
       if (adminId == null) throw Exception('Admin not authenticated');
 
-      // Call secure Edge Function to approve payment
-      final response = await _supabase.functions.invoke(
-        'admin-approve-payment',
-        body: {
-          'payment_proof_id': proof.id,
-          'action': 'approve',
-        },
-      );
+      // Get subscription details
+      final subscriptionResponse = await _supabase
+          .from('subscriptions')
+          .select('*, subscription_plans(*)')
+          .eq('id', proof.subscriptionId)
+          .single();
 
-      // Check response status
-      if (response.status != 200 && response.status != 201) {
-        final errorData = response.data;
-        String errorMessage = 'حدث خطأ غير متوقع';
+      final plan = subscriptionResponse['subscription_plans'];
+      // Get duration type and convert to months
+      final durationType = plan['duration_type'] as String;
+      final durationMonths = durationType == 'monthly' ? 1 : 12;
 
-        if (errorData is Map<String, dynamic> && errorData.containsKey('error')) {
-          errorMessage = errorData['error'] as String;
-        }
+      // Calculate dates
+      // IMPORTANT: Set start_date to beginning of TODAY so user can access immediately
+      // Not the exact approval time, which could block access if approved late in the day
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day); // Beginning of today (00:00:00)
+      final endDate = startDate.add(Duration(days: durationMonths * 30));
 
-        throw Exception(errorMessage);
-      }
+      // Start transaction-like updates
+      // 1. Update payment proof
+      await _supabase.from('payment_proofs').update({
+        'status': 'approved',
+        'reviewed_at': now.toIso8601String(),
+        'reviewed_by': adminId,
+      }).eq('id', proof.id);
+
+      // 2. Update subscription
+      await _supabase.from('subscriptions').update({
+        'status': 'active',
+        'start_date': startDate.toIso8601String(), // Start at beginning of day
+        'end_date': endDate.toIso8601String(),
+        'approved_at': now.toIso8601String(), // Record actual approval time
+        'approved_by': adminId,
+      }).eq('id', proof.subscriptionId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -215,7 +230,7 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('فشل قبول الدفع: ${e.toString().replaceAll("Exception:", "").trim()}'),
+            content: Text('فشل قبول الدفع: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -236,27 +251,20 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen>
       final adminId = _supabase.auth.currentUser?.id;
       if (adminId == null) throw Exception('Admin not authenticated');
 
-      // Call secure Edge Function to reject payment
-      final response = await _supabase.functions.invoke(
-        'admin-approve-payment',
-        body: {
-          'payment_proof_id': proof.id,
-          'action': 'reject',
-          'rejection_reason': reason,
-        },
-      );
+      final now = DateTime.now();
 
-      // Check response status
-      if (response.status != 200 && response.status != 201) {
-        final errorData = response.data;
-        String errorMessage = 'حدث خطأ غير متوقع';
+      // Update payment proof
+      await _supabase.from('payment_proofs').update({
+        'status': 'rejected',
+        'reviewed_at': now.toIso8601String(),
+        'reviewed_by': adminId,
+        'rejection_reason': reason,
+      }).eq('id', proof.id);
 
-        if (errorData is Map<String, dynamic> && errorData.containsKey('error')) {
-          errorMessage = errorData['error'] as String;
-        }
-
-        throw Exception(errorMessage);
-      }
+      // Update subscription status
+      await _supabase.from('subscriptions').update({
+        'status': 'rejected',
+      }).eq('id', proof.subscriptionId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -274,7 +282,7 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('فشل رفض الدفع: ${e.toString().replaceAll("Exception:", "").trim()}'),
+            content: Text('فشل رفض الدفع: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -282,7 +290,7 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen>
     }
   }
 
-  void _viewImage(String imageUrl) {
+  void _viewImage(String paymentProofId) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -290,12 +298,13 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen>
         child: Stack(
           children: [
             InteractiveViewer(
-              child: CachedNetworkImage(
-                imageUrl: imageUrl,
-                placeholder: (context, url) => const Center(
+              child: SecurePaymentImage(
+                paymentProofId: paymentProofId,
+                fit: BoxFit.contain,
+                placeholder: const Center(
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
-                errorWidget: (context, url, error) => const Center(
+                errorWidget: const Center(
                   child: Icon(Icons.broken_image, color: Colors.white54, size: 64),
                 ),
               ),
@@ -502,7 +511,7 @@ class _PaymentVerificationScreenState extends State<PaymentVerificationScreen>
                               planDetails: _planDetails[proof.id],
                               onApprove: () => _approvePayment(proof),
                               onReject: () => _rejectPayment(proof),
-                              onViewImage: () => _viewImage(proof.imageUrl),
+                              onViewImage: () => _viewImage(proof.id),
                             );
                           },
                         ),
