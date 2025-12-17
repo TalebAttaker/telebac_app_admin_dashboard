@@ -28,6 +28,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
   List<Map<String, dynamic>> _filteredVideos = [];
   List<Map<String, dynamic>> _curricula = [];
   List<Map<String, dynamic>> _grades = [];
+  List<Map<String, dynamic>> _specializations = [];
   List<Map<String, dynamic>> _subjects = [];
   List<Map<String, dynamic>> _topics = [];
 
@@ -36,6 +37,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
   bool _isCompactView = false;
   String? _selectedCurriculumId;
   String? _selectedGradeId;
+  String? _selectedSpecializationId;
   String? _selectedSubjectId;
   String? _selectedTopicId;
 
@@ -83,6 +85,8 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
       setState(() {
         _grades = List<Map<String, dynamic>>.from(response);
         _selectedGradeId = null;
+        _specializations = [];
+        _selectedSpecializationId = null;
         _subjects = [];
         _selectedSubjectId = null;
         _topics = [];
@@ -94,7 +98,34 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
     }
   }
 
-  Future<void> _loadSubjects(String? gradeId) async {
+  Future<void> _loadSpecializations(String? gradeId) async {
+    try {
+      var query = _supabase
+          .from('specializations')
+          .select()
+          .eq('is_active', true);
+
+      if (gradeId != null) {
+        query = query.eq('grade_id', gradeId);
+      }
+
+      final response = await query.order('display_order');
+
+      setState(() {
+        _specializations = List<Map<String, dynamic>>.from(response);
+        _selectedSpecializationId = null;
+        _subjects = [];
+        _selectedSubjectId = null;
+        _topics = [];
+        _selectedTopicId = null;
+      });
+      _applyFilters();
+    } catch (e) {
+      debugPrint('Error loading specializations: $e');
+    }
+  }
+
+  Future<void> _loadSubjects(String? gradeId, String? specializationId) async {
     try {
       var query = _supabase
           .from('subjects')
@@ -103,6 +134,11 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
 
       if (gradeId != null) {
         query = query.eq('grade_id', gradeId);
+      }
+
+      // Filter by specialization if selected, or show subjects without specialization
+      if (specializationId != null) {
+        query = query.eq('specialization_id', specializationId);
       }
 
       final response = await query.order('display_order');
@@ -153,6 +189,11 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                 id,
                 name,
                 name_ar,
+                specialization_id,
+                specializations(
+                  id,
+                  name_ar
+                ),
                 grades(
                   id,
                   name,
@@ -179,6 +220,11 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                   id,
                   name,
                   name_ar,
+                  specialization_id,
+                  specializations(
+                    id,
+                    name_ar
+                  ),
                   grades(
                     id,
                     name,
@@ -245,6 +291,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
         if (topic == null) {
           return _selectedCurriculumId == null &&
               _selectedGradeId == null &&
+              _selectedSpecializationId == null &&
               _selectedSubjectId == null &&
               _selectedTopicId == null;
         }
@@ -259,6 +306,11 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
 
         // Apply grade filter
         if (_selectedGradeId != null && grade?['id'] != _selectedGradeId) {
+          return false;
+        }
+
+        // Apply specialization filter
+        if (_selectedSpecializationId != null && subject?['specialization_id'] != _selectedSpecializationId) {
           return false;
         }
 
@@ -281,9 +333,11 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
     setState(() {
       _selectedCurriculumId = null;
       _selectedGradeId = null;
+      _selectedSpecializationId = null;
       _selectedSubjectId = null;
       _selectedTopicId = null;
       _grades = [];
+      _specializations = [];
       _subjects = [];
       _topics = [];
       _filteredVideos = _allVideos;
@@ -452,7 +506,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                 style: AdminTheme.titleSmall,
               ),
               const Spacer(),
-              if (_selectedCurriculumId != null || _selectedGradeId != null || _selectedSubjectId != null || _selectedTopicId != null)
+              if (_selectedCurriculumId != null || _selectedGradeId != null || _selectedSpecializationId != null || _selectedSubjectId != null || _selectedTopicId != null)
                 TextButton.icon(
                   onPressed: _clearFilters,
                   icon: const Icon(Icons.clear, size: 16),
@@ -512,9 +566,11 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                     } else {
                       setState(() {
                         _grades = [];
+                        _specializations = [];
                         _subjects = [];
                         _topics = [];
                         _selectedGradeId = null;
+                        _selectedSpecializationId = null;
                         _selectedSubjectId = null;
                         _selectedTopicId = null;
                       });
@@ -564,7 +620,63 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                   onChanged: _selectedCurriculumId == null ? null : (value) {
                     setState(() => _selectedGradeId = value);
                     if (value != null) {
-                      _loadSubjects(value);
+                      _loadSpecializations(value);
+                    } else {
+                      setState(() {
+                        _specializations = [];
+                        _subjects = [];
+                        _topics = [];
+                        _selectedSpecializationId = null;
+                        _selectedSubjectId = null;
+                        _selectedTopicId = null;
+                      });
+                      _applyFilters();
+                    }
+                  },
+                ),
+              ),
+
+              // Specialization Filter
+              SizedBox(
+                width: 200,
+                child: DropdownButtonFormField<String>(
+                  value: _selectedSpecializationId,
+                  decoration: InputDecoration(
+                    labelText: 'الشعبة',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    filled: true,
+                    fillColor: AdminTheme.primaryDark,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  dropdownColor: AdminTheme.secondaryDark,
+                  style: const TextStyle(color: Colors.white),
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('جميع الشعب', style: TextStyle(color: Colors.white70)),
+                    ),
+                    ..._specializations.map((specialization) {
+                      return DropdownMenuItem(
+                        value: specialization['id'],
+                        child: Text(
+                          specialization['name_ar'] ?? specialization['name'],
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      );
+                    }),
+                  ],
+                  onChanged: _selectedGradeId == null ? null : (value) {
+                    setState(() => _selectedSpecializationId = value);
+                    if (value != null) {
+                      _loadSubjects(_selectedGradeId, value);
                     } else {
                       setState(() {
                         _subjects = [];
