@@ -60,6 +60,10 @@ dependencies:
   path: ^1.9.0
   csv: ^6.0.0
 
+  # Image Processing & Compression
+  image: ^4.0.0
+  flutter_image_compress: ^2.0.0
+
   # Device Info (for device binding)
   device_info_plus: ^10.1.0
   package_info_plus: ^8.0.0

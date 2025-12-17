@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import '../../services/secure_bunny_service.dart';
+import '../../services/pdf_service.dart';
+import '../../services/thumbnail_service.dart';
 import '../../utils/admin_theme.dart';
 
 /// Enhanced Video Manager Screen
@@ -1434,6 +1436,23 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
+                      // Thumbnail button
+                      IconButton(
+                        onPressed: () => _showThumbnailDialog(video),
+                        icon: Icon(
+                          _isCustomThumbnail(video['thumbnail_url'])
+                              ? Icons.image
+                              : Icons.image_outlined,
+                          size: 20,
+                        ),
+                        color: _isCustomThumbnail(video['thumbnail_url'])
+                            ? Colors.green.shade300
+                            : Colors.white38,
+                        tooltip: 'إدارة الصورة المصغرة',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 8),
                       // PDF button
                       IconButton(
                         onPressed: video['lesson'] != null ? () => _showPdfDialog(video) : null,
@@ -1656,6 +1675,20 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Thumbnail button
+                  IconButton(
+                    onPressed: () => _showThumbnailDialog(video),
+                    icon: Icon(
+                      _isCustomThumbnail(video['thumbnail_url'])
+                          ? Icons.image
+                          : Icons.image_outlined,
+                      size: 20,
+                    ),
+                    color: _isCustomThumbnail(video['thumbnail_url'])
+                        ? Colors.green.shade300
+                        : Colors.white38,
+                    tooltip: 'إدارة الصورة المصغرة',
+                  ),
                   // PDF button
                   IconButton(
                     onPressed: video['lesson'] != null ? () => _showPdfDialog(video) : null,
@@ -1738,13 +1771,31 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
   void _showPdfDialog(Map<String, dynamic> video) {
     showDialog(
       context: context,
-      builder: (context) => _PdfManagementDialog(
+      builder: (context) => _PdfUploadDialog(
         video: video,
-        onUpdated: () {
+        onUploaded: () {
           _loadAllVideos();
         },
       ),
     );
+  }
+
+  void _showThumbnailDialog(Map<String, dynamic> video) {
+    showDialog(
+      context: context,
+      builder: (context) => _ThumbnailUploadDialog(
+        video: video,
+        onUploaded: () {
+          _loadAllVideos();
+        },
+      ),
+    );
+  }
+
+  bool _isCustomThumbnail(String? thumbnailUrl) {
+    if (thumbnailUrl == null) return false;
+    // التحقق من أن الصورة من Supabase Storage (وليس من BunnyCDN)
+    return thumbnailUrl.contains('video-thumbnails');
   }
 
   void _showReplaceVideoDialog(Map<String, dynamic> video) {
@@ -3122,5 +3173,799 @@ class _ReplaceVideoDialogState extends State<_ReplaceVideoDialog> {
         _isUploading = false;
       });
     }
+  }
+}
+
+// ============================================================================
+// PDF Upload/Replace Dialog
+// ============================================================================
+
+class _PdfUploadDialog extends StatefulWidget {
+  final Map<String, dynamic> video;
+  final VoidCallback onUploaded;
+
+  const _PdfUploadDialog({
+    required this.video,
+    required this.onUploaded,
+  });
+
+  @override
+  State<_PdfUploadDialog> createState() => _PdfUploadDialogState();
+}
+
+class _PdfUploadDialogState extends State<_PdfUploadDialog> {
+  final _pdfService = PdfService();
+  bool _isUploading = false;
+  String? _error;
+  PlatformFile? _selectedFile;
+
+  // Check if PDF already exists
+  bool get _hasPdf => widget.video['lesson']?['pdf_url'] != null;
+  String? get _pdfUrl => widget.video['lesson']?['pdf_url'];
+  String? get _lessonId => widget.video['lesson']?['id'];
+
+  Future<void> _pickFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        withData: true,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        setState(() {
+          _selectedFile = result.files.first;
+          _error = null;
+        });
+      }
+    } catch (e) {
+      setState(() => _error = 'فشل اختيار الملف: $e');
+    }
+  }
+
+  Future<void> _uploadPdf() async {
+    if (_selectedFile == null) {
+      setState(() => _error = 'يرجى اختيار ملف PDF أولاً');
+      return;
+    }
+
+    if (_lessonId == null) {
+      setState(() => _error = 'لا يوجد درس مرتبط بهذا الفيديو');
+      return;
+    }
+
+    setState(() {
+      _isUploading = true;
+      _error = null;
+    });
+
+    try {
+      String pdfUrl;
+
+      if (_hasPdf) {
+        // Replace existing PDF
+        pdfUrl = await _pdfService.replacePdf(
+          file: _selectedFile!,
+          lessonId: _lessonId!,
+          oldPdfUrl: _pdfUrl!,
+        );
+      } else {
+        // Upload new PDF
+        pdfUrl = await _pdfService.uploadPdf(
+          file: _selectedFile!,
+          lessonId: _lessonId!,
+        );
+
+        // Update database
+        await _pdfService.updateLessonPdfUrl(
+          lessonId: _lessonId!,
+          pdfUrl: pdfUrl,
+        );
+      }
+
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onUploaded();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_hasPdf ? '✅ تم استبدال ملف PDF بنجاح!' : '✅ تم رفع ملف PDF بنجاح!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isUploading = false;
+      });
+    }
+  }
+
+  Future<void> _deletePdf() async {
+    if (!_hasPdf || _lessonId == null) return;
+
+    // Confirm deletion
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: const Text('هل أنت متأكد من حذف ملف PDF؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isUploading = true;
+      _error = null;
+    });
+
+    try {
+      await _pdfService.deletePdf(_pdfUrl!);
+      await _pdfService.updateLessonPdfUrl(
+        lessonId: _lessonId!,
+        pdfUrl: null,
+      );
+
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onUploaded();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ تم حذف ملف PDF بنجاح!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'فشل حذف PDF: $e';
+        _isUploading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: AdminTheme.secondaryDark,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 500),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Icon(Icons.picture_as_pdf, color: Colors.red.shade300, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _hasPdf ? 'إدارة ملف PDF' : 'رفع ملف PDF',
+                    style: AdminTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                  color: Colors.white70,
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            // Current PDF status
+            if (_hasPdf) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'يوجد ملف PDF مرفق بهذا الدرس',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => launchUrl(Uri.parse(_pdfUrl!)),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text('عرض'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // File picker
+            if (!_isUploading) ...[
+              Text(
+                _hasPdf ? 'اختر ملف PDF جديد للاستبدال:' : 'اختر ملف PDF:',
+                style: AdminTheme.bodyMedium.copyWith(color: Colors.white70),
+              ),
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: _pickFile,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white24),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.file_upload, color: Colors.white54),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _selectedFile?.name ?? 'اضغط لاختيار ملف PDF',
+                          style: TextStyle(
+                            color: _selectedFile != null ? Colors.white : Colors.white54,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (_selectedFile != null)
+                        Text(
+                          '${(_selectedFile!.size / 1024 / 1024).toStringAsFixed(1)} MB',
+                          style: const TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+
+            // Error message
+            if (_error != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error, color: Colors.red, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Loading indicator
+            if (_isUploading) ...[
+              const SizedBox(height: 24),
+              const Center(
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('جاري العمل...', style: TextStyle(color: Colors.white70)),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 24),
+
+            // Action buttons
+            if (!_isUploading)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (_hasPdf)
+                    TextButton.icon(
+                      onPressed: _deletePdf,
+                      icon: const Icon(Icons.delete),
+                      label: const Text('حذف PDF'),
+                      style: TextButton.styleFrom(foregroundColor: Colors.red),
+                    ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('إلغاء'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: _selectedFile != null ? _uploadPdf : null,
+                    icon: Icon(_hasPdf ? Icons.swap_horiz : Icons.upload),
+                    label: Text(_hasPdf ? 'استبدال' : 'رفع'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AdminTheme.accentBlue,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// Thumbnail Upload/Replace Dialog
+// ============================================================================
+
+class _ThumbnailUploadDialog extends StatefulWidget {
+  final Map<String, dynamic> video;
+  final VoidCallback onUploaded;
+
+  const _ThumbnailUploadDialog({
+    required this.video,
+    required this.onUploaded,
+  });
+
+  @override
+  State<_ThumbnailUploadDialog> createState() => _ThumbnailUploadDialogState();
+}
+
+class _ThumbnailUploadDialogState extends State<_ThumbnailUploadDialog> {
+  final _thumbnailService = ThumbnailService();
+  bool _isUploading = false;
+  double _uploadProgress = 0.0;
+  String _statusMessage = '';
+  String? _error;
+  PlatformFile? _selectedFile;
+  ThumbnailUploadResult? _uploadResult;
+
+  // Check if custom thumbnail already exists
+  bool get _hasCustomThumbnail {
+    final thumbnailUrl = widget.video['thumbnail_url'] as String?;
+    if (thumbnailUrl == null) return false;
+    return thumbnailUrl.contains('video-thumbnails');
+  }
+
+  String? get _thumbnailUrl => widget.video['thumbnail_url'];
+  String? get _videoId => widget.video['id'];
+
+  Future<void> _pickImage() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+        withData: true,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        setState(() {
+          _selectedFile = result.files.first;
+          _error = null;
+          _uploadResult = null;
+        });
+      }
+    } catch (e) {
+      setState(() => _error = 'فشل اختيار الصورة: $e');
+    }
+  }
+
+  Future<void> _uploadThumbnail() async {
+    if (_selectedFile == null) {
+      setState(() => _error = 'يرجى اختيار صورة أولاً');
+      return;
+    }
+
+    if (_videoId == null) {
+      setState(() => _error = 'معرف الفيديو غير موجود');
+      return;
+    }
+
+    setState(() {
+      _isUploading = true;
+      _uploadProgress = 0.0;
+      _error = null;
+    });
+
+    try {
+      ThumbnailUploadResult result;
+
+      if (_hasCustomThumbnail) {
+        // Replace existing custom thumbnail
+        result = await _thumbnailService.replaceThumbnail(
+          file: _selectedFile!,
+          videoId: _videoId!,
+          oldThumbnailUrl: _thumbnailUrl!,
+          onProgress: (status, progress) {
+            setState(() {
+              _statusMessage = status;
+              _uploadProgress = progress;
+            });
+          },
+        );
+      } else {
+        // Upload new thumbnail
+        result = await _thumbnailService.uploadThumbnail(
+          file: _selectedFile!,
+          videoId: _videoId!,
+          onProgress: (status, progress) {
+            setState(() {
+              _statusMessage = status;
+              _uploadProgress = progress;
+            });
+          },
+        );
+
+        // Update database
+        await _thumbnailService.updateVideoThumbnail(
+          videoId: _videoId!,
+          thumbnailUrl: result.url,
+        );
+      }
+
+      setState(() => _uploadResult = result);
+
+      if (mounted) {
+        await Future.delayed(const Duration(seconds: 1));
+        Navigator.pop(context);
+        widget.onUploaded();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _hasCustomThumbnail
+                  ? '✅ تم استبدال الصورة المصغرة بنجاح!'
+                  : '✅ تم رفع الصورة المصغرة بنجاح!',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isUploading = false;
+      });
+    }
+  }
+
+  Future<void> _deleteThumbnail() async {
+    if (!_hasCustomThumbnail || _videoId == null) return;
+
+    // Confirm deletion
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: const Text(
+          'هل أنت متأكد من حذف الصورة المصغرة المخصصة؟\nسيتم العودة إلى الصورة المصغرة من BunnyCDN.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isUploading = true;
+      _error = null;
+    });
+
+    try {
+      await _thumbnailService.deleteThumbnail(_thumbnailUrl!);
+
+      // Set thumbnail_url to null to use BunnyCDN default
+      await _thumbnailService.updateVideoThumbnail(
+        videoId: _videoId!,
+        thumbnailUrl: null,
+      );
+
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onUploaded();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ تم حذف الصورة المصغرة بنجاح!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'فشل حذف الصورة المصغرة: $e';
+        _isUploading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: AdminTheme.secondaryDark,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 600),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Icon(Icons.image, color: Colors.green.shade300, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _hasCustomThumbnail
+                        ? 'إدارة الصورة المصغرة'
+                        : 'رفع صورة مصغرة مخصصة',
+                    style: AdminTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                  color: Colors.white70,
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            // Current thumbnail status
+            if (_hasCustomThumbnail) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'يوجد صورة مصغرة مخصصة لهذا الفيديو',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    // Preview current thumbnail
+                    if (_thumbnailUrl != null)
+                      Container(
+                        width: 80,
+                        height: 45,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          image: DecorationImage(
+                            image: NetworkImage(_thumbnailUrl!),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // File picker
+            if (!_isUploading && _uploadResult == null) ...[
+              Text(
+                _hasCustomThumbnail
+                    ? 'اختر صورة جديدة للاستبدال:'
+                    : 'اختر صورة مصغرة:',
+                style: AdminTheme.bodyMedium.copyWith(color: Colors.white70),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'الصورة سيتم ضغطها تلقائياً إلى WebP بحجم أقل من 500KB',
+                style: AdminTheme.bodySmall.copyWith(color: Colors.white38),
+              ),
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: _pickImage,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white24),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.image, color: Colors.white54),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _selectedFile?.name ?? 'اضغط لاختيار صورة (JPG, PNG, WebP)',
+                          style: TextStyle(
+                            color: _selectedFile != null ? Colors.white : Colors.white54,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (_selectedFile != null)
+                        Text(
+                          '${(_selectedFile!.size / 1024 / 1024).toStringAsFixed(1)} MB',
+                          style: const TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Image preview
+              if (_selectedFile != null && _selectedFile!.bytes != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(8),
+                    image: DecorationImage(
+                      image: MemoryImage(_selectedFile!.bytes!),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+
+            // Upload progress
+            if (_isUploading && _uploadResult == null) ...[
+              const SizedBox(height: 24),
+              Column(
+                children: [
+                  LinearProgressIndicator(
+                    value: _uploadProgress,
+                    backgroundColor: Colors.white10,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      AdminTheme.accentBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _statusMessage,
+                    style: const TextStyle(color: Colors.white70),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${(_uploadProgress * 100).toStringAsFixed(0)}%',
+                    style: AdminTheme.bodySmall.copyWith(color: Colors.white38),
+                  ),
+                ],
+              ),
+            ],
+
+            // Upload result
+            if (_uploadResult != null) ...[
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.check_circle, color: Colors.green, size: 24),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'تم بنجاح!',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _uploadResult!.compressionInfo,
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Error message
+            if (_error != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error, color: Colors.red, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 24),
+
+            // Action buttons
+            if (!_isUploading && _uploadResult == null)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (_hasCustomThumbnail)
+                    TextButton.icon(
+                      onPressed: _deleteThumbnail,
+                      icon: const Icon(Icons.delete),
+                      label: const Text('حذف'),
+                      style: TextButton.styleFrom(foregroundColor: Colors.red),
+                    ),
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('إلغاء'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: _selectedFile != null ? _uploadThumbnail : null,
+                    icon: Icon(_hasCustomThumbnail ? Icons.swap_horiz : Icons.upload),
+                    label: Text(_hasCustomThumbnail ? 'استبدال' : 'رفع'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AdminTheme.accentBlue,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
