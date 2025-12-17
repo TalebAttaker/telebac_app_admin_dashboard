@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 import '../../services/secure_bunny_service.dart';
 import '../../utils/admin_theme.dart';
 
@@ -35,6 +37,8 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
   // State
   bool _isLoading = true;
   bool _isCompactView = false;
+  bool _isSyncing = false;
+  int _videosNeedingSync = 0;
   String? _selectedCurriculumId;
   String? _selectedGradeId;
   String? _selectedSpecializationId;
@@ -267,11 +271,13 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
       setState(() {
         _allVideos = allVideos;
         _filteredVideos = _allVideos;
+        _videosNeedingSync = _allVideos.where((v) => (v['duration_seconds'] ?? 0) <= 5).length;
       });
 
       debugPrint('✅ Loaded ${_allVideos.length} videos successfully');
       debugPrint('📊 Videos with classification: ${_allVideos.where((v) => v['topics'] != null).length}');
       debugPrint('⚠️  Videos without classification: ${_allVideos.where((v) => v['topics'] == null).length}');
+      debugPrint('🔄 Videos needing sync: $_videosNeedingSync');
     } catch (e) {
       debugPrint('Error loading videos: $e');
       if (mounted) {
@@ -342,6 +348,72 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
       _topics = [];
       _filteredVideos = _allVideos;
     });
+  }
+
+  /// Sync video durations from BunnyCDN
+  Future<void> _syncVideoDurations() async {
+    if (_videosNeedingSync == 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ جميع الفيديوهات محدثة بالفعل!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isSyncing = true);
+
+    try {
+      final response = await http.post(
+        Uri.parse('https://ctupxmtreqyxubtphkrk.supabase.co/functions/v1/sync-video-durations'),
+        headers: {
+          'Authorization': 'Bearer ${_supabase.auth.currentSession?.accessToken ?? ""}',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({}),
+      );
+
+      if (response.statusCode == 200) {
+        final result = json.decode(response.body);
+        final updated = result['updated'] ?? 0;
+        final failed = result['failed'] ?? 0;
+        final total = result['total'] ?? 0;
+
+        // Reload videos to reflect changes
+        await _loadAllVideos();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '✅ تم تحديث $updated من $total فيديو بنجاح!' +
+                (failed > 0 ? '\n⚠️ فشل تحديث $failed فيديو' : ''),
+              ),
+              backgroundColor: failed > 0 ? Colors.orange : Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      } else {
+        throw Exception('فشل الاتصال بالخادم: ${response.statusCode}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في المزامنة: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncing = false);
+      }
+    }
   }
 
   /// تحريك الفيديو للأعلى (تقليل display_order)
@@ -506,6 +578,32 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                 style: AdminTheme.titleSmall,
               ),
               const Spacer(),
+              // Sync button with badge
+              if (_videosNeedingSync > 0)
+                Badge(
+                  label: Text('$_videosNeedingSync'),
+                  backgroundColor: Colors.orange,
+                  child: ElevatedButton.icon(
+                    onPressed: _isSyncing ? null : _syncVideoDurations,
+                    icon: _isSyncing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Icon(Icons.sync, size: 18),
+                    label: Text(_isSyncing ? 'جاري المزامنة...' : 'مزامنة الأطوال'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                  ),
+                ),
+              if (_videosNeedingSync > 0) const SizedBox(width: 12),
               if (_selectedCurriculumId != null || _selectedGradeId != null || _selectedSpecializationId != null || _selectedSubjectId != null || _selectedTopicId != null)
                 TextButton.icon(
                   onPressed: _clearFilters,
