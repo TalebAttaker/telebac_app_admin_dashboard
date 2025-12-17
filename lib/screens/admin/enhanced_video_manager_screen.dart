@@ -139,81 +139,93 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
 
   Future<void> _loadAllVideos() async {
     try {
-      // First, load all videos (including those without topic_id)
-      // Sort by display_order for proper ordering
+      // Load all videos with their complete classification hierarchy in ONE query
+      // This supports both direct topic_id and lesson_id → topic_id relationships
       final response = await _supabase
           .from('videos')
-          .select('*')
+          .select('''
+            *,
+            topics:topic_id(
+              id,
+              name,
+              name_ar,
+              subjects(
+                id,
+                name,
+                name_ar,
+                grades(
+                  id,
+                  name,
+                  name_ar,
+                  curriculum_id,
+                  curricula(
+                    id,
+                    name,
+                    name_ar
+                  )
+                )
+              )
+            ),
+            lessons:lesson_id(
+              id,
+              title,
+              pdf_url,
+              topic_id,
+              topics(
+                id,
+                name,
+                name_ar,
+                subjects(
+                  id,
+                  name,
+                  name_ar,
+                  grades(
+                    id,
+                    name,
+                    name_ar,
+                    curriculum_id,
+                    curricula(
+                      id,
+                      name,
+                      name_ar
+                    )
+                  )
+                )
+              )
+            )
+          ''')
           .order('display_order', ascending: true);
 
       final allVideos = List<Map<String, dynamic>>.from(response);
 
-      // Now load topic information via lesson relationship
-      final videosWithTopics = <Map<String, dynamic>>[];
-
+      // Process videos to use direct topic_id if available, otherwise use lesson → topic
       for (final video in allVideos) {
-        final lessonId = video['lesson_id'];
-
-        // Load lesson with topic hierarchy (this is the correct relationship)
-        if (lessonId != null) {
-          try {
-            final lessonResponse = await _supabase
-                .from('lessons')
-                .select('''
-                  id,
-                  title,
-                  pdf_url,
-                  topic_id,
-                  topics(
-                    id,
-                    name,
-                    name_ar,
-                    subjects(
-                      id,
-                      name,
-                      name_ar,
-                      grades(
-                        id,
-                        name,
-                        name_ar,
-                        curriculum_id,
-                        curricula(
-                          id,
-                          name,
-                          name_ar
-                        )
-                      )
-                    )
-                  )
-                ''')
-                .eq('id', lessonId)
-                .maybeSingle();
-
-            if (lessonResponse != null) {
-              video['lesson'] = lessonResponse;
-              // Extract topic from lesson for filtering
-              video['topics'] = lessonResponse['topics'];
-            } else {
-              video['lesson'] = null;
-              video['topics'] = null;
-            }
-          } catch (e) {
-            debugPrint('Error loading lesson $lessonId: $e');
-            video['lesson'] = null;
-            video['topics'] = null;
-          }
-        } else {
-          video['lesson'] = null;
-          video['topics'] = null;
+        // Priority 1: Direct topic_id relationship (current method)
+        if (video['topics'] != null) {
+          // Already has direct topic - keep it
+          final lesson = video['lessons'];
+          video['lesson'] = lesson; // Keep lesson for PDF access
         }
-
-        videosWithTopics.add(video);
+        // Priority 2: lesson_id → topic_id relationship (legacy method)
+        else if (video['lessons'] != null && video['lessons']['topics'] != null) {
+          video['topics'] = video['lessons']['topics'];
+          video['lesson'] = video['lessons'];
+        }
+        // No classification found
+        else {
+          video['topics'] = null;
+          video['lesson'] = video['lessons'];
+        }
       }
 
       setState(() {
-        _allVideos = videosWithTopics;
+        _allVideos = allVideos;
         _filteredVideos = _allVideos;
       });
+
+      debugPrint('✅ Loaded ${_allVideos.length} videos successfully');
+      debugPrint('📊 Videos with classification: ${_allVideos.where((v) => v['topics'] != null).length}');
+      debugPrint('⚠️  Videos without classification: ${_allVideos.where((v) => v['topics'] == null).length}');
     } catch (e) {
       debugPrint('Error loading videos: $e');
       if (mounted) {
