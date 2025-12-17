@@ -1136,7 +1136,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
         padding: const EdgeInsets.all(20),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 400,
-          childAspectRatio: 1.25, // Adjusted for category buttons + reorder buttons
+          childAspectRatio: 0.75, // Taller cards to fit all buttons (width/height ratio)
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),
@@ -1349,7 +1349,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
 
           // Video Info
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Padding(
               padding: const EdgeInsets.all(10),
               child: Column(
