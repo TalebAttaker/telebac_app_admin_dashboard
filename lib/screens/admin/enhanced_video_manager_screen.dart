@@ -416,6 +416,68 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
     }
   }
 
+  /// Update video content category instantly
+  Future<void> _updateVideoCategory(String videoId, String newCategory, int videoIndex) async {
+    try {
+      // Update in Supabase
+      await _supabase
+          .from('videos')
+          .update({'content_category': newCategory})
+          .eq('id', videoId);
+
+      // Update in local state immediately for instant UI update
+      setState(() {
+        // Update in _allVideos
+        final allVideoIndex = _allVideos.indexWhere((v) => v['id'] == videoId);
+        if (allVideoIndex != -1) {
+          _allVideos[allVideoIndex]['content_category'] = newCategory;
+        }
+
+        // Update in _filteredVideos
+        if (videoIndex >= 0 && videoIndex < _filteredVideos.length) {
+          _filteredVideos[videoIndex]['content_category'] = newCategory;
+        }
+      });
+
+      if (mounted) {
+        // Show success message
+        String categoryName = '';
+        switch (newCategory) {
+          case 'lesson':
+            categoryName = 'درس مرئي';
+            break;
+          case 'solved_exercise':
+            categoryName = 'تمرين محلول';
+            break;
+          case 'summary':
+            categoryName = 'ملخص';
+            break;
+          case 'solved_baccalaureate':
+            categoryName = 'باكالوريا محلولة';
+            break;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ تم تغيير الفئة إلى: $categoryName'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error updating video category: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في تحديث الفئة: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   /// تحريك الفيديو للأعلى (تقليل display_order)
   /// Move video up (decrease display_order)
   Future<void> _moveUp(int index) async {
@@ -999,6 +1061,66 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
     );
   }
 
+  /// Build content category buttons widget
+  Widget _buildCategoryButtons(Map<String, dynamic> video, int index, {bool isCompact = false}) {
+    final currentCategory = video['content_category'] as String? ?? 'lesson';
+    final videoId = video['id'] as String;
+
+    final categories = [
+      {'value': 'lesson', 'label': 'درس', 'icon': Icons.video_library, 'color': Colors.blue},
+      {'value': 'solved_exercise', 'label': 'تمرين', 'icon': Icons.assignment, 'color': Colors.green},
+      {'value': 'summary', 'label': 'ملخص', 'icon': Icons.summarize, 'color': Colors.orange},
+      {'value': 'solved_baccalaureate', 'label': 'باك', 'icon': Icons.school, 'color': Colors.purple},
+    ];
+
+    return Wrap(
+      spacing: isCompact ? 6 : 4,
+      runSpacing: 4,
+      children: categories.map((cat) {
+        final isActive = currentCategory == cat['value'];
+        final color = cat['color'] as Color;
+
+        return InkWell(
+          onTap: () => _updateVideoCategory(videoId, cat['value'] as String, index),
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isCompact ? 8 : 6,
+              vertical: isCompact ? 6 : 4,
+            ),
+            decoration: BoxDecoration(
+              color: isActive ? color.withOpacity(0.9) : color.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: isActive ? color : color.withOpacity(0.5),
+                width: isActive ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  cat['icon'] as IconData,
+                  size: isCompact ? 14 : 12,
+                  color: isActive ? Colors.white : color,
+                ),
+                SizedBox(width: isCompact ? 4 : 3),
+                Text(
+                  cat['label'] as String,
+                  style: TextStyle(
+                    fontSize: isCompact ? 11 : 10,
+                    fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                    color: isActive ? Colors.white : color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   Widget _buildVideoCard(Map<String, dynamic> video, int index) {
     final topic = video['topics'] as Map<String, dynamic>?;
     final subject = topic?['subjects'] as Map<String, dynamic>?;
@@ -1170,6 +1292,9 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 8),
+                  // Content category buttons
+                  _buildCategoryButtons(video, index),
                   const Spacer(),
                   // Reorder buttons row
                   Row(
@@ -1387,6 +1512,9 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    const SizedBox(height: 6),
+                    // Content category buttons
+                    _buildCategoryButtons(video, index, isCompact: true),
                   ],
                 ),
               ),
