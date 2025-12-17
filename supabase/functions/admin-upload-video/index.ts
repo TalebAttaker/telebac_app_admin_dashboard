@@ -5,6 +5,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const allowedOrigins = [
   'https://mauritania-edu-dashbsk.netlify.app',  // Admin dashboard (CORRECT URL)
   'https://admin.mauritania-edu.com',            // Production admin dashboard
+  'https://telebac-admin-dashboard-qmqkhnorp-taleb-ahmeds-projects.vercel.app',  // Vercel deployment
   'http://localhost:8080',                       // Local development
   'http://localhost:3000',                       // Alternative dev port
 ]
@@ -41,6 +42,7 @@ interface UploadVideoRequest {
   is_free?: boolean
   is_downloadable?: boolean
   display_order?: number
+  content_category?: string
   url_360p?: string
   url_480p?: string
   url_720p?: string
@@ -133,6 +135,7 @@ serve(async (req) => {
       is_free,
       is_downloadable,
       display_order,
+      content_category,
       url_360p,
       url_480p,
       url_720p,
@@ -165,6 +168,15 @@ serve(async (req) => {
     if (!topic_id && !lesson_id) {
       return new Response(
         JSON.stringify({ error: 'Either topic_id or lesson_id must be provided' }),
+        { status: 400, headers: corsHeaders }
+      )
+    }
+
+    // Validate content_category if provided
+    const validCategories = ['lesson', 'solved_exercise', 'summary', 'solved_baccalaureate']
+    if (content_category && !validCategories.includes(content_category)) {
+      return new Response(
+        JSON.stringify({ error: `Invalid content_category. Must be one of: ${validCategories.join(', ')}` }),
         { status: 400, headers: corsHeaders }
       )
     }
@@ -238,6 +250,7 @@ serve(async (req) => {
     if (is_free !== undefined) videoData.is_free = is_free
     if (is_downloadable !== undefined) videoData.is_downloadable = is_downloadable
     if (display_order !== undefined) videoData.display_order = display_order
+    if (content_category) videoData.content_category = content_category
     if (url_360p) videoData.url_360p = url_360p
     if (url_480p) videoData.url_480p = url_480p
     if (url_720p) videoData.url_720p = url_720p
@@ -277,7 +290,8 @@ serve(async (req) => {
         topic_id: topic_id || null,
         lesson_id: lesson_id || null,
         duration_seconds: duration_seconds,
-        is_free: is_free || false
+        is_free: is_free || false,
+        content_category: content_category || null
       },
       ip_address: clientIp,
       user_agent: userAgent,
