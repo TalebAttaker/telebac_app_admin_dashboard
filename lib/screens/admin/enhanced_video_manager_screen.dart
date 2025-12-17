@@ -1446,6 +1446,15 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                       ),
                       const SizedBox(width: 8),
                       IconButton(
+                        onPressed: () => _showReplaceVideoDialog(video),
+                        icon: const Icon(Icons.swap_horiz, size: 20),
+                        color: Colors.orange.shade300,
+                        tooltip: 'استبدال الفيديو',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
                         onPressed: () => _showEditDialog(video),
                         icon: const Icon(Icons.edit, size: 20),
                         color: Colors.white70,
@@ -1656,6 +1665,12 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                     tooltip: video['lesson'] != null ? 'إدارة PDF' : 'لا يوجد درس مرتبط',
                   ),
                   IconButton(
+                    onPressed: () => _showReplaceVideoDialog(video),
+                    icon: const Icon(Icons.swap_horiz, size: 20),
+                    color: Colors.orange.shade300,
+                    tooltip: 'استبدال الفيديو',
+                  ),
+                  IconButton(
                     onPressed: () => _showEditDialog(video),
                     icon: const Icon(Icons.edit, size: 20),
                     color: Colors.white70,
@@ -1720,6 +1735,18 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
       builder: (context) => _PdfManagementDialog(
         video: video,
         onUpdated: () {
+          _loadAllVideos();
+        },
+      ),
+    );
+  }
+
+  void _showReplaceVideoDialog(Map<String, dynamic> video) {
+    showDialog(
+      context: context,
+      builder: (context) => _ReplaceVideoDialog(
+        video: video,
+        onReplaced: () {
           _loadAllVideos();
         },
       ),
@@ -2780,5 +2807,314 @@ class _PdfManagementDialogState extends State<_PdfManagementDialog> {
         ),
       ),
     );
+  }
+}
+
+// ============================================================================
+// Replace Video Dialog
+// ============================================================================
+
+class _ReplaceVideoDialog extends StatefulWidget {
+  final Map<String, dynamic> video;
+  final VoidCallback onReplaced;
+
+  const _ReplaceVideoDialog({
+    required this.video,
+    required this.onReplaced,
+  });
+
+  @override
+  State<_ReplaceVideoDialog> createState() => _ReplaceVideoDialogState();
+}
+
+class _ReplaceVideoDialogState extends State<_ReplaceVideoDialog> {
+  final _bunnyService = SecureBunnyService();
+  final _supabase = Supabase.instance.client;
+
+  bool _isUploading = false;
+  double _uploadProgress = 0.0;
+  String? _error;
+  PlatformFile? _selectedFile;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AdminTheme.secondaryDark,
+      title: Row(
+        children: [
+          Icon(Icons.swap_horiz, color: Colors.orange.shade300),
+          const SizedBox(width: 12),
+          const Text('استبدال الفيديو', style: TextStyle(color: Colors.white)),
+        ],
+      ),
+      content: SizedBox(
+        width: 500,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Warning message
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.withOpacity(0.5)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning, color: Colors.orange.shade300, size: 20),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'سيتم حذف الفيديو القديم واستبداله بالفيديو الجديد. جميع البيانات الأخرى (العنوان، التصنيف، الموضوع) ستبقى كما هي.',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Current video info
+            Text(
+              'الفيديو الحالي:',
+              style: AdminTheme.bodySmall.copyWith(color: Colors.white54),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AdminTheme.primaryDark,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.video['title_ar'] ?? widget.video['title'] ?? 'بدون عنوان',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'ID: ${widget.video['bunny_video_id']}',
+                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // File selection
+            if (!_isUploading) ...[
+              Text(
+                'اختر الفيديو الجديد:',
+                style: AdminTheme.bodySmall.copyWith(color: Colors.white54),
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: _pickFile,
+                icon: const Icon(Icons.file_upload),
+                label: Text(_selectedFile == null ? 'اختر فيديو' : _selectedFile!.name),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AdminTheme.accentBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+              ),
+              if (_selectedFile != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'الحجم: ${(_selectedFile!.size / 1024 / 1024).toStringAsFixed(2)} MB',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+              ],
+            ],
+
+            // Upload progress
+            if (_isUploading) ...[
+              const SizedBox(height: 20),
+              Text(
+                'جاري الرفع...',
+                style: AdminTheme.bodyMedium.copyWith(color: Colors.white),
+              ),
+              const SizedBox(height: 12),
+              LinearProgressIndicator(
+                value: _uploadProgress,
+                backgroundColor: Colors.white12,
+                valueColor: AlwaysStoppedAnimation<Color>(AdminTheme.accentBlue),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${(_uploadProgress * 100).toStringAsFixed(0)}%',
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ],
+
+            // Error message
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.withOpacity(0.5)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error, color: Colors.red, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isUploading ? null : () => Navigator.pop(context),
+          child: const Text('إلغاء'),
+        ),
+        ElevatedButton(
+          onPressed: (_isUploading || _selectedFile == null) ? null : _replaceVideo,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange.shade600,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('استبدال'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.video,
+        withData: kIsWeb,
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        setState(() {
+          _selectedFile = result.files.first;
+          _error = null;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'فشل اختيار الملف: $e';
+      });
+    }
+  }
+
+  Future<void> _replaceVideo() async {
+    if (_selectedFile == null) return;
+
+    setState(() {
+      _isUploading = true;
+      _uploadProgress = 0.0;
+      _error = null;
+    });
+
+    try {
+      // Step 1: Upload new video to BunnyCDN
+      debugPrint('[REPLACE] Uploading new video...');
+      String? newVideoId;
+
+      if (kIsWeb) {
+        // Web upload using HTML File
+        newVideoId = await _bunnyService.uploadVideoFromWeb(
+          htmlFile: _selectedFile!.bytes,
+          fileName: _selectedFile!.name,
+          fileSize: _selectedFile!.size,
+          title: widget.video['title_ar'] ?? widget.video['title'] ?? 'Replaced Video',
+          onProgress: (progress) {
+            setState(() {
+              _uploadProgress = progress * 0.7; // 70% for upload
+            });
+          },
+        );
+      } else {
+        // Mobile/Desktop upload
+        final bytes = _selectedFile!.bytes!;
+        newVideoId = await _bunnyService.uploadVideoFromBytes(
+          videoBytes: bytes,
+          fileName: _selectedFile!.name,
+          title: widget.video['title_ar'] ?? widget.video['title'] ?? 'Replaced Video',
+          onProgress: (progress) {
+            setState(() {
+              _uploadProgress = progress * 0.7;
+            });
+          },
+        );
+      }
+
+      if (newVideoId == null) {
+        throw Exception(_bunnyService.error ?? 'فشل رفع الفيديو الجديد');
+      }
+
+      debugPrint('[REPLACE] New video uploaded: $newVideoId');
+      setState(() => _uploadProgress = 0.75);
+
+      // Step 2: Wait for video processing and get duration
+      await Future.delayed(const Duration(seconds: 3));
+      debugPrint('[REPLACE] Getting new video info...');
+
+      final videoInfo = await _bunnyService.getVideoInfo(newVideoId);
+      final duration = videoInfo != null ? (videoInfo['length'] as num?)?.round() ?? 1 : 1;
+      final thumbnail = _bunnyService.getVideoThumbnailUrl(newVideoId);
+
+      debugPrint('[REPLACE] New video duration: ${duration}s');
+      setState(() => _uploadProgress = 0.85);
+
+      // Step 3: Update database with new video ID
+      debugPrint('[REPLACE] Updating database...');
+      await _supabase
+          .from('videos')
+          .update({
+            'bunny_video_id': newVideoId,
+            'duration_seconds': duration,
+            'thumbnail_url': thumbnail,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', widget.video['id']);
+
+      debugPrint('[REPLACE] Database updated');
+      setState(() => _uploadProgress = 0.95);
+
+      // Step 4: Delete old video from BunnyCDN
+      final oldVideoId = widget.video['bunny_video_id'] as String;
+      debugPrint('[REPLACE] Deleting old video: $oldVideoId');
+      await _bunnyService.deleteVideo(oldVideoId);
+      debugPrint('[REPLACE] Old video deleted');
+
+      setState(() => _uploadProgress = 1.0);
+
+      // Success!
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onReplaced();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ تم استبدال الفيديو بنجاح!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[REPLACE] Error: $e');
+      setState(() {
+        _error = 'خطأ في استبدال الفيديو: $e';
+        _isUploading = false;
+      });
+    }
   }
 }
