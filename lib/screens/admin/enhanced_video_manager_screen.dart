@@ -44,6 +44,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
   String? _selectedSpecializationId;
   String? _selectedSubjectId;
   String? _selectedTopicId;
+  String? _selectedContentCategory;
 
   @override
   void initState() {
@@ -299,7 +300,8 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
               _selectedGradeId == null &&
               _selectedSpecializationId == null &&
               _selectedSubjectId == null &&
-              _selectedTopicId == null;
+              _selectedTopicId == null &&
+              _selectedContentCategory == null;
         }
 
         final subject = topic['subjects'] as Map<String, dynamic>?;
@@ -330,6 +332,14 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
           return false;
         }
 
+        // Apply content category filter
+        if (_selectedContentCategory != null) {
+          final videoCategory = video['content_category'] as String?;
+          if (videoCategory != _selectedContentCategory) {
+            return false;
+          }
+        }
+
         return true;
       }).toList();
     });
@@ -342,6 +352,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
       _selectedSpecializationId = null;
       _selectedSubjectId = null;
       _selectedTopicId = null;
+      _selectedContentCategory = null;
       _grades = [];
       _specializations = [];
       _subjects = [];
@@ -666,7 +677,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                   ),
                 ),
               if (_videosNeedingSync > 0) const SizedBox(width: 12),
-              if (_selectedCurriculumId != null || _selectedGradeId != null || _selectedSpecializationId != null || _selectedSubjectId != null || _selectedTopicId != null)
+              if (_selectedCurriculumId != null || _selectedGradeId != null || _selectedSpecializationId != null || _selectedSubjectId != null || _selectedTopicId != null || _selectedContentCategory != null)
                 TextButton.icon(
                   onPressed: _clearFilters,
                   icon: const Icon(Icons.clear, size: 16),
@@ -945,6 +956,81 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                   },
                 ),
               ),
+
+              // Content Category Filter
+              SizedBox(
+                width: 200,
+                child: DropdownButtonFormField<String>(
+                  value: _selectedContentCategory,
+                  decoration: InputDecoration(
+                    labelText: 'نوع المحتوى',
+                    labelStyle: const TextStyle(color: Colors.white70),
+                    filled: true,
+                    fillColor: AdminTheme.primaryDark,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  dropdownColor: AdminTheme.secondaryDark,
+                  style: const TextStyle(color: Colors.white),
+                  items: const [
+                    DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('جميع الأنواع', style: TextStyle(color: Colors.white70)),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'lesson',
+                      child: Row(
+                        children: [
+                          Icon(Icons.video_library, color: Colors.blue, size: 18),
+                          SizedBox(width: 8),
+                          Text('درس مرئي', style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'solved_exercise',
+                      child: Row(
+                        children: [
+                          Icon(Icons.assignment, color: Colors.green, size: 18),
+                          SizedBox(width: 8),
+                          Text('تمرين محلول', style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'summary',
+                      child: Row(
+                        children: [
+                          Icon(Icons.summarize, color: Colors.orange, size: 18),
+                          SizedBox(width: 8),
+                          Text('ملخص', style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                    DropdownMenuItem<String>(
+                      value: 'solved_baccalaureate',
+                      child: Row(
+                        children: [
+                          Icon(Icons.school, color: Colors.purple, size: 18),
+                          SizedBox(width: 8),
+                          Text('باكالوريا محلولة', style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() => _selectedContentCategory = value);
+                    _applyFilters();
+                  },
+                ),
+              ),
             ],
           ),
         ],
@@ -966,7 +1052,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
             'عدد الفيديوهات: ${_filteredVideos.length}',
             style: AdminTheme.titleSmall,
           ),
-          if (_selectedGradeId != null || _selectedSubjectId != null || _selectedTopicId != null) ...[
+          if (_selectedGradeId != null || _selectedSubjectId != null || _selectedTopicId != null || _selectedContentCategory != null) ...[
             const SizedBox(width: 8),
             Text(
               '(${_allVideos.length} الإجمالي)',
@@ -1032,7 +1118,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            _selectedGradeId != null || _selectedSubjectId != null || _selectedTopicId != null
+            _selectedGradeId != null || _selectedSubjectId != null || _selectedTopicId != null || _selectedContentCategory != null
                 ? 'لا توجد فيديوهات تطابق الفلاتر المحددة'
                 : 'قم برفع فيديوهات من قسم "دروس مرئية"',
             style: AdminTheme.bodyMedium.copyWith(color: Colors.white38),
@@ -1049,7 +1135,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
         padding: const EdgeInsets.all(20),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 400,
-          childAspectRatio: 1.1, // Adjusted for reorder buttons
+          childAspectRatio: 1.25, // Adjusted for category buttons + reorder buttons
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),
@@ -1074,8 +1160,8 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
     ];
 
     return Wrap(
-      spacing: isCompact ? 6 : 4,
-      runSpacing: 4,
+      spacing: isCompact ? 6 : 3,
+      runSpacing: 3,
       children: categories.map((cat) {
         final isActive = currentCategory == cat['value'];
         final color = cat['color'] as Color;
@@ -1085,8 +1171,8 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
           borderRadius: BorderRadius.circular(6),
           child: Container(
             padding: EdgeInsets.symmetric(
-              horizontal: isCompact ? 8 : 6,
-              vertical: isCompact ? 6 : 4,
+              horizontal: isCompact ? 8 : 5,
+              vertical: isCompact ? 6 : 3,
             ),
             decoration: BoxDecoration(
               color: isActive ? color.withOpacity(0.9) : color.withOpacity(0.2),
@@ -1101,14 +1187,14 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
               children: [
                 Icon(
                   cat['icon'] as IconData,
-                  size: isCompact ? 14 : 12,
+                  size: isCompact ? 14 : 11,
                   color: isActive ? Colors.white : color,
                 ),
-                SizedBox(width: isCompact ? 4 : 3),
+                SizedBox(width: isCompact ? 4 : 2),
                 Text(
                   cat['label'] as String,
                   style: TextStyle(
-                    fontSize: isCompact ? 11 : 10,
+                    fontSize: isCompact ? 11 : 9,
                     fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
                     color: isActive ? Colors.white : color,
                   ),
@@ -1264,7 +1350,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
           Expanded(
             flex: 2,
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1278,7 +1364,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   // Hierarchy
                   Text(
                     '$gradeName • $subjectName',
@@ -1292,7 +1378,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   // Content category buttons
                   _buildCategoryButtons(video, index),
                   const Spacer(),
