@@ -1136,7 +1136,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
         padding: const EdgeInsets.all(20),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 400,
-          childAspectRatio: 0.75, // Taller cards to fit all buttons (width/height ratio)
+          childAspectRatio: 0.85, // Balanced height for all content (width/height ratio)
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),
@@ -1160,47 +1160,52 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
       {'value': 'solved_baccalaureate', 'label': 'باك', 'icon': Icons.school, 'color': Colors.purple},
     ];
 
-    return Wrap(
-      spacing: isCompact ? 6 : 3,
-      runSpacing: 3,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: categories.map((cat) {
         final isActive = currentCategory == cat['value'];
         final color = cat['color'] as Color;
 
-        return InkWell(
-          onTap: () => _updateVideoCategory(videoId, cat['value'] as String, index),
-          borderRadius: BorderRadius.circular(6),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: isCompact ? 8 : 5,
-              vertical: isCompact ? 6 : 3,
-            ),
-            decoration: BoxDecoration(
-              color: isActive ? color.withOpacity(0.9) : color.withOpacity(0.2),
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: InkWell(
+              onTap: () => _updateVideoCategory(videoId, cat['value'] as String, index),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: isActive ? color : color.withOpacity(0.5),
-                width: isActive ? 2 : 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  cat['icon'] as IconData,
-                  size: isCompact ? 14 : 11,
-                  color: isActive ? Colors.white : color,
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isCompact ? 6 : 4,
+                  vertical: isCompact ? 8 : 6,
                 ),
-                SizedBox(width: isCompact ? 4 : 2),
-                Text(
-                  cat['label'] as String,
-                  style: TextStyle(
-                    fontSize: isCompact ? 11 : 9,
-                    fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-                    color: isActive ? Colors.white : color,
+                decoration: BoxDecoration(
+                  color: isActive ? color.withOpacity(0.9) : color.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isActive ? color : color.withOpacity(0.5),
+                    width: isActive ? 2 : 1,
                   ),
                 ),
-              ],
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      cat['icon'] as IconData,
+                      size: isCompact ? 16 : 14,
+                      color: isActive ? Colors.white : color,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      cat['label'] as String,
+                      style: TextStyle(
+                        fontSize: isCompact ? 10 : 9,
+                        fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                        color: isActive ? Colors.white : color,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         );
