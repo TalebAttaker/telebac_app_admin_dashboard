@@ -30,9 +30,12 @@ class ThumbnailService {
     required String fileName,
   }) async {
     try {
+      debugPrint('[THUMBNAIL] 🔄 Starting image compression...');
       final originalSize = imageBytes.length;
+      debugPrint('[THUMBNAIL] Original size: $originalSize bytes');
 
       // ضغط الصورة
+      debugPrint('[THUMBNAIL] Calling FlutterImageCompress.compressWithList...');
       final compressedBytes = await FlutterImageCompress.compressWithList(
         imageBytes,
         minWidth: _maxWidth,
@@ -41,8 +44,13 @@ class ThumbnailService {
         format: _format,
       );
 
+      debugPrint('[THUMBNAIL] Compression completed');
+      debugPrint('[THUMBNAIL] Compressed bytes type: ${compressedBytes.runtimeType}');
+
       final compressedSize = compressedBytes.length;
       final compressionRatio = ((originalSize - compressedSize) / originalSize * 100);
+
+      debugPrint('[THUMBNAIL] ✅ Compression successful: $originalSize → $compressedSize bytes (${compressionRatio.toStringAsFixed(1)}% reduction)');
 
       return CompressionResult(
         compressedBytes: Uint8List.fromList(compressedBytes),
@@ -51,6 +59,8 @@ class ThumbnailService {
         compressionRatio: compressionRatio,
       );
     } catch (e) {
+      debugPrint('[THUMBNAIL] ❌ Compression error: ${e.toString()}');
+      debugPrint('[THUMBNAIL] Error type: ${e.runtimeType}');
       throw Exception('فشل ضغط الصورة: ${e.toString()}');
     }
   }
@@ -100,18 +110,24 @@ class ThumbnailService {
       final Uint8List imageBytes = file.bytes!;
 
       // ضغط الصورة
+      debugPrint('[THUMBNAIL] 📦 Starting compression phase...');
       onProgress?.call('جاري ضغط الصورة...', 0.3);
       final compressionResult = await compressImage(
         imageBytes: imageBytes,
         fileName: file.name,
       );
+      debugPrint('[THUMBNAIL] ✅ Compression phase completed');
 
       // إنشاء اسم فريد للملف
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final fileName = 'video_${videoId}_$timestamp.webp';
+      debugPrint('[THUMBNAIL] 📝 Generated filename: $fileName');
 
       // رفع الصورة المضغوطة إلى Supabase Storage
+      debugPrint('[THUMBNAIL] 📤 Starting upload to Supabase Storage...');
+      debugPrint('[THUMBNAIL] Bucket: $_bucketName, Size: ${compressionResult.compressedSize} bytes');
       onProgress?.call('جاري رفع الصورة...', 0.7);
+
       await _supabase.storage.from(_bucketName).uploadBinary(
             fileName,
             compressionResult.compressedBytes,
@@ -120,11 +136,15 @@ class ThumbnailService {
               upsert: false,
             ),
           );
+      debugPrint('[THUMBNAIL] ✅ Upload completed successfully');
 
       // الحصول على الرابط العام
+      debugPrint('[THUMBNAIL] 🔗 Getting public URL...');
       final publicUrl = _supabase.storage.from(_bucketName).getPublicUrl(fileName);
+      debugPrint('[THUMBNAIL] ✅ Public URL: $publicUrl');
 
       onProgress?.call('تم بنجاح', 1.0);
+      debugPrint('[THUMBNAIL] 🎉 Upload process completed successfully');
 
       return ThumbnailUploadResult(
         url: publicUrl,
@@ -132,7 +152,11 @@ class ThumbnailService {
         compressedSize: compressionResult.compressedSize,
         compressionRatio: compressionResult.compressionRatio,
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('[THUMBNAIL] ❌❌❌ UPLOAD FAILED ❌❌❌');
+      debugPrint('[THUMBNAIL] Error: ${e.toString()}');
+      debugPrint('[THUMBNAIL] Error type: ${e.runtimeType}');
+      debugPrint('[THUMBNAIL] Stack trace: $stackTrace');
       throw Exception('فشل رفع الصورة المصغرة: ${e.toString()}');
     }
   }
