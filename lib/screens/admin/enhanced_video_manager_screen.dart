@@ -8,6 +8,11 @@ import 'package:http/http.dart' as http;
 import '../../services/secure_bunny_service.dart';
 import '../../services/pdf_service.dart';
 import '../../services/thumbnail_service.dart';
+
+// Conditional import for web file picker
+import '../../services/web_file_picker_stub.dart'
+  if (dart.library.html) '../../services/web_file_picker_web.dart';
+
 import '../../utils/admin_theme.dart';
 
 /// Enhanced Video Manager Screen
@@ -3023,6 +3028,7 @@ class _ReplaceVideoDialogState extends State<_ReplaceVideoDialog> {
   double _uploadProgress = 0.0;
   String? _error;
   PlatformFile? _selectedFile;
+  dynamic _htmlFile; // For web: html.File object for large file upload
 
   @override
   Widget build(BuildContext context) {
@@ -3185,16 +3191,35 @@ class _ReplaceVideoDialogState extends State<_ReplaceVideoDialog> {
 
   Future<void> _pickFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.video,
-        withData: kIsWeb,
-      );
+      if (kIsWeb) {
+        // Web: Use WebFilePicker to get html.File object for large file support
+        final webResult = await WebFilePicker.pickVideoFile();
 
-      if (result != null && result.files.isNotEmpty) {
-        setState(() {
-          _selectedFile = result.files.first;
-          _error = null;
-        });
+        if (webResult != null) {
+          setState(() {
+            _htmlFile = webResult.htmlFile;
+            _selectedFile = PlatformFile(
+              name: webResult.name,
+              size: webResult.size,
+              bytes: null, // Don't load bytes for large files on web
+            );
+            _error = null;
+          });
+        }
+      } else {
+        // Mobile/Desktop: Use regular file picker
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.video,
+          withData: true,
+        );
+
+        if (result != null && result.files.isNotEmpty) {
+          setState(() {
+            _selectedFile = result.files.first;
+            _htmlFile = null;
+            _error = null;
+          });
+        }
       }
     } catch (e) {
       setState(() {
@@ -3206,8 +3231,15 @@ class _ReplaceVideoDialogState extends State<_ReplaceVideoDialog> {
   Future<void> _replaceVideo() async {
     if (_selectedFile == null) return;
 
-    // Validate file bytes before upload
-    if (_selectedFile!.bytes == null) {
+    // Validate file data before upload
+    if (kIsWeb && _htmlFile == null) {
+      setState(() {
+        _error = 'فشل قراءة بيانات الفيديو. يرجى اختيار الملف مرة أخرى.';
+      });
+      return;
+    }
+
+    if (!kIsWeb && _selectedFile!.bytes == null) {
       setState(() {
         _error = 'فشل قراءة بيانات الفيديو. يرجى اختيار الملف مرة أخرى.';
       });
@@ -3225,14 +3257,15 @@ class _ReplaceVideoDialogState extends State<_ReplaceVideoDialog> {
       debugPrint('[REPLACE] Uploading new video...');
       debugPrint('[REPLACE] File name: ${_selectedFile!.name}');
       debugPrint('[REPLACE] File size: ${_selectedFile!.size} bytes');
-      debugPrint('[REPLACE] File bytes: ${_selectedFile!.bytes!.length} bytes');
+      debugPrint('[REPLACE] Platform: ${kIsWeb ? "WEB" : "MOBILE/DESKTOP"}');
 
       String? newVideoId;
 
       if (kIsWeb) {
-        // Web upload using HTML File
+        // Web upload using HTML File object (supports large files)
+        debugPrint('[REPLACE] Using html.File object for upload');
         newVideoId = await _bunnyService.uploadVideoFromWeb(
-          htmlFile: _selectedFile!.bytes,
+          htmlFile: _htmlFile,
           fileName: _selectedFile!.name,
           fileSize: _selectedFile!.size,
           title: widget.video['title_ar'] ?? widget.video['title'] ?? 'Replaced Video',
@@ -3243,7 +3276,8 @@ class _ReplaceVideoDialogState extends State<_ReplaceVideoDialog> {
           },
         );
       } else {
-        // Mobile/Desktop upload
+        // Mobile/Desktop upload using bytes
+        debugPrint('[REPLACE] Using bytes for upload: ${_selectedFile!.bytes!.length} bytes');
         final bytes = _selectedFile!.bytes!;
         newVideoId = await _bunnyService.uploadVideoFromBytes(
           videoBytes: bytes,
