@@ -47,6 +47,17 @@ class ThumbnailService {
       debugPrint('[THUMBNAIL] Compression completed');
       debugPrint('[THUMBNAIL] Compressed bytes type: ${compressedBytes.runtimeType}');
 
+      // Check if compression returned null (common issue on web)
+      if (compressedBytes == null || compressedBytes.isEmpty) {
+        debugPrint('[THUMBNAIL] ⚠️ Compression returned null/empty - using original image');
+        return CompressionResult(
+          compressedBytes: imageBytes,
+          originalSize: originalSize,
+          compressedSize: originalSize,
+          compressionRatio: 0.0,
+        );
+      }
+
       final compressedSize = compressedBytes.length;
       final compressionRatio = ((originalSize - compressedSize) / originalSize * 100);
 
@@ -61,7 +72,15 @@ class ThumbnailService {
     } catch (e) {
       debugPrint('[THUMBNAIL] ❌ Compression error: ${e.toString()}');
       debugPrint('[THUMBNAIL] Error type: ${e.runtimeType}');
-      throw Exception('فشل ضغط الصورة: ${e.toString()}');
+      debugPrint('[THUMBNAIL] ⚠️ Falling back to original image without compression');
+
+      // Fallback: استخدم الصورة الأصلية بدون ضغط
+      return CompressionResult(
+        compressedBytes: imageBytes,
+        originalSize: imageBytes.length,
+        compressedSize: imageBytes.length,
+        compressionRatio: 0.0,
+      );
     }
   }
 
@@ -118,10 +137,19 @@ class ThumbnailService {
       );
       debugPrint('[THUMBNAIL] ✅ Compression phase completed');
 
-      // إنشاء اسم فريد للملف
+      // إنشاء اسم فريد للملف - استخدم امتداد الملف الأصلي
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final fileName = 'video_${videoId}_$timestamp.webp';
+      final fileName = 'video_${videoId}_$timestamp.$extension';
       debugPrint('[THUMBNAIL] 📝 Generated filename: $fileName');
+
+      // تحديد نوع المحتوى بناءً على الامتداد
+      String contentType = 'image/jpeg';
+      if (extension == 'png') {
+        contentType = 'image/png';
+      } else if (extension == 'webp') {
+        contentType = 'image/webp';
+      }
+      debugPrint('[THUMBNAIL] Content-Type: $contentType');
 
       // رفع الصورة المضغوطة إلى Supabase Storage
       debugPrint('[THUMBNAIL] 📤 Starting upload to Supabase Storage...');
@@ -131,8 +159,8 @@ class ThumbnailService {
       await _supabase.storage.from(_bucketName).uploadBinary(
             fileName,
             compressionResult.compressedBytes,
-            fileOptions: const FileOptions(
-              contentType: 'image/webp',
+            fileOptions: FileOptions(
+              contentType: contentType,
               upsert: false,
             ),
           );
