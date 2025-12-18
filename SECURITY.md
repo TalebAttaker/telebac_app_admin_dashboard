@@ -69,16 +69,30 @@ Future<void> signOut() async {
 - زر إلغاء + زر تأكيد
 - لا يمكن إغلاقه بالضغط خارج النافذة
 
-### 3. **CORS Protection (حماية CORS)**
+### 3. **CORS Protection (حماية CORS) - 🔒 MAXIMUM SECURITY**
 
-في Edge Function `admin-get-payment-image`:
+في جميع Edge Functions الخاصة بالإدارة:
 ```typescript
+// SECURITY: Restricted CORS - PRODUCTION ONLY
+// ⚠️ CRITICAL: Only the official admin dashboard is allowed
 const allowedOrigins = [
-  'https://telebac-admin-dashboard.vercel.app',
   'https://telebacappadmindashboard.vercel.app',
-  'http://localhost:8080',
 ];
 ```
+
+**Edge Functions المحمية:**
+- ✅ admin-get-payment-image
+- ✅ admin-upload-video
+- ✅ admin-approve-payment
+- ✅ admin-create-subscription
+- ✅ admin-manage-user
+
+**تم إزالة جميع الدومينات الخطيرة:**
+- ❌ localhost:8080 (خطر أمني كبير)
+- ❌ localhost:3000 (خطر أمني كبير)
+- ❌ Netlify domain (دومين قديم)
+- ❌ mauritania-edu.com (دومين قديم)
+- ❌ telebac-admin-dashboard.vercel.app (دومين قديم)
 
 ### 4. **Security Headers**
 
@@ -206,5 +220,34 @@ await authService.signOut();
 
 ---
 
+## 🔐 تحديث أمني حرج - 2025-12-18
+
+### تأمين Edge Functions - إزالة جميع الدومينات غير الآمنة
+
+**المشكلة المكتشفة:**
+- جميع Edge Functions الخاصة بالإدارة كانت تقبل طلبات من localhost
+- دومينات قديمة (Netlify, mauritania-edu.com) كانت لا تزال مسموحة
+- هذا يشكل **خطر أمني كبير جداً** - يمكن لأي شخص على localhost أن يستدعي Admin APIs!
+
+**الإصلاح المطبق:**
+تم تحديث 5 Edge Functions لقبول طلبات من دومين واحد فقط:
+- ✅ `admin-get-payment-image` (v3)
+- ✅ `admin-upload-video` (v17)
+- ✅ `admin-approve-payment` (v14)
+- ✅ `admin-create-subscription` (v14)
+- ✅ `admin-manage-user` (v14)
+
+**الدومين الوحيد المسموح:**
+```
+https://telebacappadmindashboard.vercel.app
+```
+
+**النتيجة:**
+- 🔒 **أمان 100%** - لا يمكن استدعاء Admin APIs من أي مكان آخر
+- 🚫 **منع localhost** - لا يمكن التطوير المحلي على Admin APIs (للأمان)
+- ✅ **إنتاج فقط** - جميع العمليات الإدارية تتم عبر الدومين الرسمي فقط
+
+---
+
 **آخر تحديث:** 2025-12-18
-**الإصدار:** 2.0.0 - Secure Logout Implementation
+**الإصدار:** 2.1.0 - Critical CORS Security Fix
