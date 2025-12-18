@@ -3206,6 +3206,14 @@ class _ReplaceVideoDialogState extends State<_ReplaceVideoDialog> {
   Future<void> _replaceVideo() async {
     if (_selectedFile == null) return;
 
+    // Validate file bytes before upload
+    if (_selectedFile!.bytes == null) {
+      setState(() {
+        _error = 'فشل قراءة بيانات الفيديو. يرجى اختيار الملف مرة أخرى.';
+      });
+      return;
+    }
+
     setState(() {
       _isUploading = true;
       _uploadProgress = 0.0;
@@ -3215,6 +3223,10 @@ class _ReplaceVideoDialogState extends State<_ReplaceVideoDialog> {
     try {
       // Step 1: Upload new video to BunnyCDN
       debugPrint('[REPLACE] Uploading new video...');
+      debugPrint('[REPLACE] File name: ${_selectedFile!.name}');
+      debugPrint('[REPLACE] File size: ${_selectedFile!.size} bytes');
+      debugPrint('[REPLACE] File bytes: ${_selectedFile!.bytes!.length} bytes');
+
       String? newVideoId;
 
       if (kIsWeb) {
