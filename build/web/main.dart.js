@@ -124452,15 +124452,17 @@ A.aDe.prototype={
 $1(a){return B.d.bE(this.a,a)},
 $S:29}
 A.aDq.prototype={
-$1(a){var s,r,q=a.lengthComputable
-q.toString
-if(q){q=a.loaded
-q.toString
-r=a.total
-r.toString
-s=q/r
-A.Z().$1("Upload progress: "+B.e.ac(s*100,1)+"%")
-this.a.$1(s)}},
+$1(a){var s,r,q,p=a.lengthComputable
+p.toString
+if(p&&a.loaded!=null&&a.total!=null){p=a.loaded
+p.toString
+s=p
+p=a.total
+p.toString
+r=p
+if(r>0){q=s/r
+A.Z().$1("Upload progress: "+B.e.ac(q*100,1)+"% ("+A.h(s)+" / "+A.h(r)+" bytes)")
+this.a.$1(q)}}},
 $S:156}
 A.aDr.prototype={
 $1(a){var s=this.a,r=s.status,q=r===200||r===201,p=this.b

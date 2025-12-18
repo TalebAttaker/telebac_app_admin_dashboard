@@ -22,10 +22,14 @@ class WebUploadService {
 
       // Setup progress tracking
       xhr.upload.onProgress.listen((event) {
-        if (event.lengthComputable) {
-          final progress = event.loaded! / event.total!;
-          debugPrint('Upload progress: ${(progress * 100).toStringAsFixed(1)}%');
-          onProgress?.call(progress);
+        if (event.lengthComputable && event.loaded != null && event.total != null) {
+          final loaded = event.loaded!;
+          final total = event.total!;
+          if (total > 0) {
+            final progress = loaded / total;
+            debugPrint('Upload progress: ${(progress * 100).toStringAsFixed(1)}% ($loaded / $total bytes)');
+            onProgress?.call(progress);
+          }
         }
       });
 
