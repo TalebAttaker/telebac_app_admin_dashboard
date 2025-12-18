@@ -248,7 +248,8 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
               )
             )
           ''')
-          .order('display_order', ascending: true);
+          .order('display_order', ascending: true)
+          .order('created_at', ascending: true); // Secondary sort for consistent ordering
 
       final allVideos = List<Map<String, dynamic>>.from(response);
 
@@ -1887,8 +1888,19 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
       context: context,
       builder: (context) => _ThumbnailUploadDialog(
         video: video,
-        onUploaded: () {
-          _loadAllVideos();
+        onUploaded: (String? newThumbnailUrl) {
+          // Update thumbnail locally without reloading all videos
+          setState(() {
+            final index = _allVideos.indexWhere((v) => v['id'] == video['id']);
+            if (index != -1) {
+              _allVideos[index]['thumbnail_url'] = newThumbnailUrl;
+            }
+            // Also update in filtered videos if present
+            final filteredIndex = _filteredVideos.indexWhere((v) => v['id'] == video['id']);
+            if (filteredIndex != -1) {
+              _filteredVideos[filteredIndex]['thumbnail_url'] = newThumbnailUrl;
+            }
+          });
         },
       ),
     );
@@ -3622,7 +3634,7 @@ class _PdfUploadDialogState extends State<_PdfUploadDialog> {
 
 class _ThumbnailUploadDialog extends StatefulWidget {
   final Map<String, dynamic> video;
-  final VoidCallback onUploaded;
+  final Function(String? newThumbnailUrl) onUploaded;
 
   const _ThumbnailUploadDialog({
     required this.video,
@@ -3736,7 +3748,7 @@ class _ThumbnailUploadDialogState extends State<_ThumbnailUploadDialog> {
       if (mounted) {
         await Future.delayed(const Duration(seconds: 1));
         Navigator.pop(context);
-        widget.onUploaded();
+        widget.onUploaded(result.url); // Pass the new thumbnail URL
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -3799,7 +3811,7 @@ class _ThumbnailUploadDialogState extends State<_ThumbnailUploadDialog> {
 
       if (mounted) {
         Navigator.pop(context);
-        widget.onUploaded();
+        widget.onUploaded(null); // Pass null to indicate deletion
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ تم حذف الصورة المصغرة بنجاح!'),
