@@ -82,18 +82,11 @@ class ThumbnailService {
       }
 
       // الحصول على bytes الصورة
-      Uint8List imageBytes;
-      if (kIsWeb) {
-        if (file.bytes == null) {
-          throw Exception('فشل قراءة الصورة');
-        }
-        imageBytes = file.bytes!;
-      } else {
-        if (file.bytes == null) {
-          throw Exception('فشل قراءة الصورة');
-        }
-        imageBytes = file.bytes!;
+      if (file.bytes == null) {
+        throw Exception('فشل قراءة الصورة. يرجى التأكد من اختيار ملف صالح');
       }
+
+      final Uint8List imageBytes = file.bytes!;
 
       // ضغط الصورة
       onProgress?.call('جاري ضغط الصورة...', 0.3);

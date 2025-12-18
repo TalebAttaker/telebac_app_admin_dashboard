@@ -3683,6 +3683,12 @@ class _ThumbnailUploadDialogState extends State<_ThumbnailUploadDialog> {
       return;
     }
 
+    // Additional validation for file.bytes
+    if (_selectedFile!.bytes == null) {
+      setState(() => _error = 'فشل قراءة بيانات الصورة. يرجى المحاولة مرة أخرى');
+      return;
+    }
+
     setState(() {
       _isUploading = true;
       _uploadProgress = 0.0;
@@ -3692,7 +3698,7 @@ class _ThumbnailUploadDialogState extends State<_ThumbnailUploadDialog> {
     try {
       ThumbnailUploadResult result;
 
-      if (_hasCustomThumbnail) {
+      if (_hasCustomThumbnail && _thumbnailUrl != null) {
         // Replace existing custom thumbnail
         result = await _thumbnailService.replaceThumbnail(
           file: _selectedFile!,
