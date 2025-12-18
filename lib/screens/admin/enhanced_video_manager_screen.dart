@@ -1917,8 +1917,25 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
       context: context,
       builder: (context) => _ReplaceVideoDialog(
         video: video,
-        onReplaced: () {
-          _loadAllVideos();
+        onReplaced: (String newVideoId, int duration, String? thumbnail) {
+          // Update video data locally without reloading all videos
+          setState(() {
+            final index = _allVideos.indexWhere((v) => v['id'] == video['id']);
+            if (index != -1) {
+              _allVideos[index]['bunny_video_id'] = newVideoId;
+              _allVideos[index]['duration_seconds'] = duration;
+              _allVideos[index]['thumbnail_url'] = thumbnail;
+              _allVideos[index]['updated_at'] = DateTime.now().toIso8601String();
+            }
+            // Also update in filtered videos if present
+            final filteredIndex = _filteredVideos.indexWhere((v) => v['id'] == video['id']);
+            if (filteredIndex != -1) {
+              _filteredVideos[filteredIndex]['bunny_video_id'] = newVideoId;
+              _filteredVideos[filteredIndex]['duration_seconds'] = duration;
+              _filteredVideos[filteredIndex]['thumbnail_url'] = thumbnail;
+              _filteredVideos[filteredIndex]['updated_at'] = DateTime.now().toIso8601String();
+            }
+          });
         },
       ),
     );
@@ -2987,7 +3004,7 @@ class _PdfManagementDialogState extends State<_PdfManagementDialog> {
 
 class _ReplaceVideoDialog extends StatefulWidget {
   final Map<String, dynamic> video;
-  final VoidCallback onReplaced;
+  final Function(String newVideoId, int duration, String? thumbnail) onReplaced;
 
   const _ReplaceVideoDialog({
     required this.video,
@@ -3272,7 +3289,7 @@ class _ReplaceVideoDialogState extends State<_ReplaceVideoDialog> {
       // Success!
       if (mounted) {
         Navigator.pop(context);
-        widget.onReplaced();
+        widget.onReplaced(newVideoId, duration, thumbnail);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ تم استبدال الفيديو بنجاح!'),
