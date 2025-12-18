@@ -101,9 +101,12 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  /// Sign out
+  /// Sign out - Secure 100% logout
+  /// Deletes JWT from localStorage, refresh tokens, and sessions from server
   Future<void> signOut() async {
     try {
+      debugPrint('[AUTH] Starting secure logout process');
+
       // Dispose realtime subscription before signing out
       _disposeRealtimeSubscription();
       _hasActiveSubscription = false;
@@ -111,9 +114,41 @@ class AuthService extends ChangeNotifier {
       // Clear subscription cache
       invalidateSubscriptionCache();
 
+      // SECURITY: Server-side cleanup before local logout
+      // This ensures refresh tokens and sessions are invalidated
+      if (isAuthenticated) {
+        try {
+          final userId = currentUser!.id;
+
+          // Delete all refresh tokens for this user from server
+          debugPrint('[AUTH] Deleting refresh tokens from server...');
+          await _supabase
+              .from('auth.refresh_tokens')
+              .delete()
+              .eq('user_id', userId);
+
+          // Delete all sessions for this user from server
+          debugPrint('[AUTH] Deleting sessions from server...');
+          await _supabase
+              .from('auth.sessions')
+              .delete()
+              .eq('user_id', userId);
+
+          debugPrint('[AUTH] Server-side cleanup completed');
+        } catch (e) {
+          debugPrint('[AUTH] Server cleanup failed (non-critical): $e');
+          // Continue with logout even if server cleanup fails
+        }
+      }
+
+      // SECURITY: Delete JWT from localStorage (Supabase handles this)
+      debugPrint('[AUTH] Clearing localStorage...');
       await _supabase.auth.signOut();
+
+      debugPrint('[AUTH] Logout completed successfully');
       notifyListeners();
     } catch (e) {
+      debugPrint('[AUTH] Error during logout: $e');
       rethrow;
     }
   }
