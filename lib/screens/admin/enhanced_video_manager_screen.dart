@@ -1455,7 +1455,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                       const SizedBox(width: 8),
                       // PDF button
                       IconButton(
-                        onPressed: video['lesson'] != null ? () => _showPdfDialog(video) : null,
+                        onPressed: () => _showPdfDialog(video),
                         icon: Icon(
                           video['lesson'] != null && video['lesson']['pdf_url'] != null
                               ? Icons.picture_as_pdf
@@ -1465,7 +1465,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                         color: video['lesson'] != null && video['lesson']['pdf_url'] != null
                             ? Colors.red.shade300
                             : Colors.white38,
-                        tooltip: video['lesson'] != null ? 'إدارة PDF' : 'لا يوجد درس مرتبط',
+                        tooltip: 'إدارة PDF',
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                       ),
@@ -1691,7 +1691,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                   ),
                   // PDF button
                   IconButton(
-                    onPressed: video['lesson'] != null ? () => _showPdfDialog(video) : null,
+                    onPressed: () => _showPdfDialog(video),
                     icon: Icon(
                       video['lesson'] != null && video['lesson']['pdf_url'] != null
                           ? Icons.picture_as_pdf
@@ -1701,7 +1701,7 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
                     color: video['lesson'] != null && video['lesson']['pdf_url'] != null
                         ? Colors.red.shade300
                         : Colors.white38,
-                    tooltip: video['lesson'] != null ? 'إدارة PDF' : 'لا يوجد درس مرتبط',
+                    tooltip: 'إدارة PDF',
                   ),
                   IconButton(
                     onPressed: () => _showReplaceVideoDialog(video),
@@ -1768,16 +1768,118 @@ class _EnhancedVideoManagerScreenState extends State<EnhancedVideoManagerScreen>
     );
   }
 
-  void _showPdfDialog(Map<String, dynamic> video) {
-    showDialog(
-      context: context,
-      builder: (context) => _PdfUploadDialog(
-        video: video,
-        onUploaded: () {
-          _loadAllVideos();
-        },
-      ),
-    );
+  Future<void> _showPdfDialog(Map<String, dynamic> video) async {
+    try {
+      // التحقق من وجود درس
+      if (video['lesson'] == null) {
+        // التحقق من وجود topic_id (ضروري لإنشاء درس)
+        final topicId = video['topic_id'];
+        if (topicId == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('❌ لا يمكن إضافة PDF: الفيديو غير مصنف (لا يوجد موضوع مرتبط)'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+
+        // عرض مؤشر تحميل
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        // إنشاء درس جديد تلقائياً
+        // نستخدم نفس عنوان الفيديو للدرس لأن الفيديو هو الدرس المرئي والـ PDF هو الدرس المكتوب
+        final videoTitle = video['title'] ?? 'بدون عنوان';
+        final lessonTitle = videoTitle;
+
+        // الحصول على آخر display_order في نفس الموضوع
+        final lastLesson = await _supabase
+            .from('lessons')
+            .select('display_order')
+            .eq('topic_id', topicId)
+            .order('display_order', ascending: false)
+            .limit(1)
+            .maybeSingle();
+
+        final nextOrder = (lastLesson?['display_order'] ?? 0) + 1;
+
+        // إنشاء الدرس في قاعدة البيانات
+        final newLesson = await _supabase
+            .from('lessons')
+            .insert({
+              'topic_id': topicId,
+              'title': lessonTitle,
+              'display_order': nextOrder,
+              'is_active': true,
+            })
+            .select()
+            .single();
+
+        // ربط الفيديو بالدرس الجديد
+        await _supabase
+            .from('videos')
+            .update({'lesson_id': newLesson['id']})
+            .eq('id', video['id']);
+
+        // تحديث بيانات الفيديو محلياً
+        video['lesson_id'] = newLesson['id'];
+        video['lesson'] = newLesson;
+        video['lessons'] = newLesson;
+
+        // إغلاق مؤشر التحميل
+        if (mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+
+        // عرض رسالة نجاح
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ تم إنشاء درس تلقائياً للفيديو'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+
+      // فتح نافذة رفع PDF
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => _PdfUploadDialog(
+            video: video,
+            onUploaded: () {
+              _loadAllVideos();
+            },
+          ),
+        );
+      }
+    } catch (e) {
+      // إغلاق مؤشر التحميل إذا كان مفتوحاً
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ خطأ في إنشاء الدرس: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _showThumbnailDialog(Map<String, dynamic> video) {
