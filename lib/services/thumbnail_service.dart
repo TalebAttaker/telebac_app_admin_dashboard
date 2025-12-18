@@ -69,23 +69,34 @@ class ThumbnailService {
     Function(String status, double progress)? onProgress,
   }) async {
     try {
+      debugPrint('[THUMBNAIL] Starting upload for video: $videoId');
+      debugPrint('[THUMBNAIL] File name: ${file.name}');
+      debugPrint('[THUMBNAIL] File size: ${file.size} bytes');
+      debugPrint('[THUMBNAIL] File extension: ${file.extension}');
+
       // التحقق من نوع الملف
       final extension = file.extension?.toLowerCase();
       if (extension == null ||
           !['jpg', 'jpeg', 'png', 'webp'].contains(extension)) {
+        debugPrint('[THUMBNAIL] ❌ Invalid file type: $extension');
         throw Exception('يجب أن تكون الصورة من نوع JPG, PNG, أو WebP');
       }
 
       // التحقق من حجم الملف
       if (file.size > _maxFileSizeBytes) {
+        debugPrint('[THUMBNAIL] ❌ File too large: ${file.size} bytes');
         throw Exception('حجم الصورة يجب أن يكون أقل من $_maxFileSizeMB ميجابايت');
       }
 
       // الحصول على bytes الصورة
+      debugPrint('[THUMBNAIL] Checking file bytes...');
       if (file.bytes == null) {
-        throw Exception('فشل قراءة الصورة. يرجى التأكد من اختيار ملف صالح');
+        debugPrint('[THUMBNAIL] ❌ File bytes is NULL!');
+        debugPrint('[THUMBNAIL] File details: name=${file.name}, size=${file.size}, path=${file.path}');
+        throw Exception('فشل قراءة الصورة. يرجى التأكد من اختيار ملف صالح (file.bytes is null)');
       }
 
+      debugPrint('[THUMBNAIL] ✅ File bytes loaded: ${file.bytes!.length} bytes');
       final Uint8List imageBytes = file.bytes!;
 
       // ضغط الصورة
